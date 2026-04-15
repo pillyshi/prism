@@ -5,7 +5,7 @@ from typing import Literal
 
 import numpy as np
 
-from .llm import LLMClient
+from .llm import BaseLLMClient
 from .models import Axis, AxisLabels
 from .nli import NLIModel
 from .sampling import sample_texts_within_budget
@@ -18,7 +18,7 @@ _PROMPT_OVERHEAD = 500  # reserved tokens for the prompt template itself
 class AxisDiscoverer:
     """Discovers binary axes from a text collection using an LLM."""
 
-    def __init__(self, llm: LLMClient, nli_model: NLIModel | None = None) -> None:
+    def __init__(self, llm: BaseLLMClient, nli_model: NLIModel | None = None) -> None:
         self._llm = llm
         self._nli_model = nli_model
 

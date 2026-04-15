@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 
-from .llm import LLMClient
+from .llm import BaseLLMClient
 from .models import Axis, AxisLabels, Feature
 from .sampling import sample_texts_within_budget
 from .prompts import feature_generation as prompts
@@ -14,7 +14,7 @@ _PROMPT_OVERHEAD = 800  # reserved tokens for the prompt template itself
 class FeatureGenerator:
     """Generates discriminative features for an axis using contrastive LLM prompting."""
 
-    def __init__(self, llm: LLMClient) -> None:
+    def __init__(self, llm: BaseLLMClient) -> None:
         self._llm = llm
 
     def generate(

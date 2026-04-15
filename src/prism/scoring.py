@@ -5,7 +5,7 @@ import json
 import numpy as np
 
 from .models import Feature, FeatureScores
-from .llm import LLMClient
+from .llm import BaseLLMClient
 from .nli import NLIModel
 
 
@@ -34,7 +34,7 @@ class QAScorer:
     Batches all features for each text into a single LLM call to reduce cost.
     """
 
-    def __init__(self, llm: LLMClient) -> None:
+    def __init__(self, llm: BaseLLMClient) -> None:
         self._llm = llm
 
     def score(self, texts: list[str], features: list[Feature]) -> list[FeatureScores]:

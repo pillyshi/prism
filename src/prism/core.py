@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
 from .discovery import AxisDiscoverer
 from .generation import FeatureGenerator
-from .llm import LLMClient
+from .llm import BaseLLMClient, LLMClient, LangChainLLMClient
 from .models import Axis, AxisLabels, Feature, FeatureMatrix, FittedPredictor, SelectionResult
 from .nli import NLIModel
 from .scoring import NLIScorer, QAScorer
@@ -27,11 +27,14 @@ class Prism:
 
     def __init__(
         self,
-        llm: str = "gpt-4o",
+        llm: str | Any = "gpt-4o",
         nli_model: str = "cross-encoder/nli-deberta-v3-large",
         api_key: str | None = None,
     ) -> None:
-        self._llm = LLMClient(model=llm, api_key=api_key)
+        if isinstance(llm, str):
+            self._llm: BaseLLMClient = LLMClient(model=llm, api_key=api_key)
+        else:
+            self._llm = LangChainLLMClient(model=llm)
         self._nli_model = NLIModel(model_name=nli_model)
         self._discoverer = AxisDiscoverer(llm=self._llm, nli_model=self._nli_model)
         self._generator = FeatureGenerator(llm=self._llm)
