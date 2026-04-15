@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# Distribution / packaging
+dist/
+*.egg-info/
+
+# Environment
+.env
+.envrc
+
+# IDE
+.vscode/
+.idea/
+
+# Test output
+output/
+
+# Memos
+memo/
+
+# OS
+.DS_Store
