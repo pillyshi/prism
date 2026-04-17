@@ -11,7 +11,7 @@ from .merging import AxisMerger
 from .models import Axis, AxisLabels, Feature, FeatureMatrix, FittedPredictor, SelectionResult
 from .nli import NLIModel
 from .scoring import NLIScorer, QAScorer
-from .selection import LassoSelector
+from .selection import FeatureSelector
 
 
 class Prism:
@@ -31,6 +31,7 @@ class Prism:
         llm: str | Any = "gpt-4o",
         nli_model: str = "cross-encoder/nli-deberta-v3-large",
         api_key: str | None = None,
+        mode: Literal["classification", "regression"] = "classification",
     ) -> None:
         if isinstance(llm, str):
             self._llm: BaseLLMClient = LLMClient(model=llm, api_key=api_key)
@@ -42,7 +43,8 @@ class Prism:
         self._merger = AxisMerger(llm=self._llm)
         self._nli_scorer = NLIScorer(model=self._nli_model)
         self._qa_scorer = QAScorer(llm=self._llm)
-        self._selector = LassoSelector()
+        self._mode = mode
+        self._selector = FeatureSelector()
 
     def merge_axes(self, axes_per_run: list[list[Axis]]) -> list[Axis]:
         """Merge axes from multiple discovery runs using LLM-based consolidation."""
@@ -65,8 +67,8 @@ class Prism:
         method: Literal["nli"] = "nli",
         threshold: float = 0.5,
     ) -> list[AxisLabels]:
-        """Stage 1b: Label texts as positive/negative for each axis."""
-        return self._discoverer.label(texts, axes, method=method, threshold=threshold)
+        """Stage 1b: Label texts for each axis."""
+        return self._discoverer.label(texts, axes, method=method, threshold=threshold, mode=self._mode)
 
     def generate_features(
         self,
@@ -120,14 +122,14 @@ class Prism:
             feature_scores = scorer.score(texts, features)
             X = np.column_stack([fs.scores for fs in feature_scores])
             y = np.array(labels_map[axis].labels, dtype=float)
-            matrices[axis] = FeatureMatrix(axis=axis, features=features, X=X, y=y)
+            matrices[axis] = FeatureMatrix(axis=axis, features=features, X=X, y=y, mode=self._mode)
 
         return matrices
 
     def select(
         self, matrices: dict[Axis, FeatureMatrix]
     ) -> tuple[dict[Axis, SelectionResult], dict[Axis, FittedPredictor]]:
-        """Stage 4: Select predictive features per axis using Lasso.
+        """Stage 4: Select predictive features per axis using L1-regularized SGD.
 
         Returns:
             Tuple of (results, predictors), both keyed by Axis.

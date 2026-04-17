@@ -69,24 +69,30 @@ class AxisDiscoverer:
         axes: list[Axis],
         method: Literal["nli", "qa"] = "nli",
         threshold: float = 0.5,
+        mode: Literal["classification", "regression"] = "classification",
     ) -> list[AxisLabels]:
-        """Label texts as positive (+1) or negative (-1) for each axis.
+        """Label texts for each axis.
 
         Args:
             texts: Full text collection.
             axes: Axes to label against.
             method: Scoring method ("nli" or "qa").
-            threshold: Score threshold for positive label (NLI only).
+            threshold: Score threshold for positive label (classification + NLI only).
+            mode: "classification" returns +1.0/-1.0; "regression" returns raw NLI scores.
 
         Returns:
             One AxisLabels per axis, parallel to texts.
         """
         if method == "nli":
-            return self._label_nli(texts, axes, threshold)
+            return self._label_nli(texts, axes, threshold, mode)
         raise NotImplementedError(f"Labeling with method='{method}' is not yet supported.")
 
     def _label_nli(
-        self, texts: list[str], axes: list[Axis], threshold: float
+        self,
+        texts: list[str],
+        axes: list[Axis],
+        threshold: float,
+        mode: Literal["classification", "regression"],
     ) -> list[AxisLabels]:
         if self._nli_model is None:
             raise ValueError("nli_model must be provided to use NLI labeling.")
@@ -94,6 +100,9 @@ class AxisDiscoverer:
         for axis in axes:
             hypotheses = [axis.hypothesis] * len(texts)
             scores = self._nli_model.score(texts, hypotheses)
-            labels = [1 if s >= threshold else -1 for s in scores]
+            if mode == "classification":
+                labels: list[float] = [1.0 if s >= threshold else -1.0 for s in scores]
+            else:
+                labels = scores.tolist()
             results.append(AxisLabels(axis=axis, labels=labels))
         return results

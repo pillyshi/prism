@@ -84,6 +84,8 @@ def save_session(
                 "axis": _axis_to_dict(r.axis),
                 "selected_features": [_feature_to_dict(f) for f in r.selected_features],
                 "coef": r.coef,
+                "cv_score": r.cv_score,
+                "cv_scoring": r.cv_scoring,
             }
             for r in results.values()
         ],
@@ -135,6 +137,8 @@ def load_session(output_dir: str | Path) -> dict[str, Any]:
             axis=axis,
             selected_features=[_feature_from_dict(fd) for fd in d["selected_features"]],
             coef=d["coef"],
+            cv_score=d.get("cv_score", 0.0),
+            cv_scoring=d.get("cv_scoring", ""),
         )
         results[axis] = result
 

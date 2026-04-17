@@ -1,25 +1,43 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
-from sklearn.linear_model import LassoCV
+from sklearn.linear_model import SGDClassifier, SGDRegressor
+from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
 
 from .models import FeatureMatrix, FittedPredictor, SelectionResult
 
 
-class LassoSelector:
-    """Selects predictive features per axis using Lasso regression."""
+_ALPHA_GRID = np.logspace(-4, 0, 20)
 
-    def __init__(self, cv: int = 5, max_iter: int = 5000, coef_threshold: float = 1e-4) -> None:
+
+class FeatureSelector:
+    """Selects predictive features per axis using L1-regularized SGD models.
+
+    Classification mode: SGDClassifier(loss="log_loss", penalty="l1"), scoring="f1".
+    Regression mode: SGDRegressor(penalty="l1"), scoring="neg_mean_squared_error".
+    Alpha is tuned via GridSearchCV.
+    """
+
+    def __init__(
+        self,
+        cv: int = 5,
+        max_iter: int = 5000,
+        coef_threshold: float = 1e-4,
+        alpha_grid: np.ndarray | None = None,
+    ) -> None:
         self.cv = cv
         self.max_iter = max_iter
         self.coef_threshold = coef_threshold
+        self.alpha_grid = alpha_grid if alpha_grid is not None else _ALPHA_GRID
 
     def select(self, matrix: FeatureMatrix) -> tuple[SelectionResult, FittedPredictor]:
-        """Fit LassoCV on the feature matrix and return the selected features and fitted predictor.
+        """Fit an L1-penalized model on the feature matrix and return selected features.
 
         Args:
-            matrix: FeatureMatrix with X (n_texts, n_features) and y (n_texts,).
+            matrix: FeatureMatrix with X, y, and mode.
 
         Returns:
             Tuple of (SelectionResult, FittedPredictor).
@@ -29,20 +47,41 @@ class LassoSelector:
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
 
-        model = LassoCV(cv=self.cv, max_iter=self.max_iter)
-        model.fit(X_scaled, y)
+        estimator, param_grid, scoring = self._build_estimator(matrix.mode)
+        search = GridSearchCV(
+            estimator,
+            param_grid,
+            cv=self.cv,
+            scoring=scoring,
+            refit=True,
+        )
+        search.fit(X_scaled, y)
 
-        # Convert coefficients back to original (unscaled) space
-        coef_original = model.coef_ / scaler.scale_
+        best_model = search.best_estimator_
+        # SGDClassifier.coef_ is (1, n_features) for binary; SGDRegressor.coef_ is (n_features,)
+        coef_scaled = best_model.coef_[0] if matrix.mode == "classification" else best_model.coef_
+        coef_original = coef_scaled / scaler.scale_
 
         mask = np.abs(coef_original) > self.coef_threshold
-        selected_features = [f for f, m in zip(matrix.features, mask) if m]
-        selected_coef = coef_original[mask].tolist()
-
         result = SelectionResult(
             axis=matrix.axis,
-            selected_features=selected_features,
-            coef=selected_coef,
+            selected_features=[f for f, m in zip(matrix.features, mask) if m],
+            coef=coef_original[mask].tolist(),
+            cv_score=float(search.best_score_),
+            cv_scoring=scoring,
         )
-        predictor = FittedPredictor(axis=matrix.axis, scaler=scaler, model=model)
-        return result, predictor
+        return result, FittedPredictor(axis=matrix.axis, scaler=scaler, model=best_model)
+
+    def _build_estimator(self, mode: str) -> tuple[Any, dict[str, list], str]:
+        param_grid: dict[str, list] = {"alpha": self.alpha_grid.tolist()}
+        if mode == "classification":
+            return (
+                SGDClassifier(loss="log_loss", penalty="l1", max_iter=self.max_iter, random_state=42),
+                param_grid,
+                "f1",
+            )
+        return (
+            SGDRegressor(penalty="l1", max_iter=self.max_iter, random_state=42),
+            param_grid,
+            "neg_mean_squared_error",
+        )

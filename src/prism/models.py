@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -29,10 +29,13 @@ class Feature(Triple):
 
 @dataclass
 class AxisLabels:
-    """Binary labels for a text collection under one axis."""
+    """Labels for a text collection under one axis.
+
+    Classification mode: +1.0 / -1.0. Regression mode: raw NLI scores in [0, 1].
+    """
 
     axis: Axis
-    labels: list[int]  # +1 (positive) / -1 (negative), parallel to texts
+    labels: list[float]  # classification: +1.0/-1.0, regression: [0, 1]
 
 
 @dataclass
@@ -45,27 +48,30 @@ class FeatureScores:
 
 @dataclass
 class FeatureMatrix:
-    """Full feature matrix for one axis, ready for Lasso."""
+    """Full feature matrix for one axis, ready for feature selection."""
 
     axis: Axis
     features: list[Feature]
     X: np.ndarray  # shape (n_texts, n_features)
-    y: np.ndarray  # shape (n_texts,), axis labels as float (+1.0 / -1.0)
+    y: np.ndarray  # shape (n_texts,); classification: +1.0/-1.0, regression: [0, 1]
+    mode: Literal["classification", "regression"] = "classification"
 
 
 @dataclass
 class SelectionResult:
-    """Features selected by Lasso for one axis."""
+    """Features selected by L1-regularized model for one axis."""
 
     axis: Axis
     selected_features: list[Feature]
-    coef: list[float]  # Lasso coefficients (original scale)
+    coef: list[float]  # coefficients in original (unscaled) space
+    cv_score: float = 0.0      # best CV score
+    cv_scoring: str = ""       # scoring metric name (e.g. "f1", "neg_mean_squared_error")
 
 
 @dataclass
 class FittedPredictor:
-    """Trained StandardScaler + LassoCV for one axis."""
+    """Trained StandardScaler + SGD estimator for one axis."""
 
     axis: Axis
     scaler: Any   # sklearn StandardScaler
-    model: Any    # sklearn LassoCV
+    model: Any    # sklearn SGDClassifier or SGDRegressor
