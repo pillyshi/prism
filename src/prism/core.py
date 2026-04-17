@@ -7,6 +7,7 @@ import numpy as np
 from .discovery import AxisDiscoverer
 from .generation import FeatureGenerator
 from .llm import BaseLLMClient, LLMClient, LangChainLLMClient
+from .merging import AxisMerger
 from .models import Axis, AxisLabels, Feature, FeatureMatrix, FittedPredictor, SelectionResult
 from .nli import NLIModel
 from .scoring import NLIScorer, QAScorer
@@ -38,9 +39,14 @@ class Prism:
         self._nli_model = NLIModel(model_name=nli_model)
         self._discoverer = AxisDiscoverer(llm=self._llm, nli_model=self._nli_model)
         self._generator = FeatureGenerator(llm=self._llm)
+        self._merger = AxisMerger(llm=self._llm)
         self._nli_scorer = NLIScorer(model=self._nli_model)
         self._qa_scorer = QAScorer(llm=self._llm)
         self._selector = LassoSelector()
+
+    def merge_axes(self, axes_per_run: list[list[Axis]]) -> list[Axis]:
+        """Merge axes from multiple discovery runs using LLM-based consolidation."""
+        return self._merger.merge(axes_per_run)
 
     def discover_axes(
         self,
