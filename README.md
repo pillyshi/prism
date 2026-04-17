@@ -109,6 +109,23 @@ vectors = prism.score(texts, features, method="nli")
 selected = prism.select(vectors, labels, method="lasso")
 ```
 
+### Multi-run axis merging
+
+Running Prism multiple times with different random seeds improves axis coverage. Use `merge_axes()` to consolidate axes from multiple runs before feature generation:
+
+```python
+# Run axis discovery multiple times
+axes_run1 = prism.discover_axes(texts, n=20, seed=0)
+axes_run2 = prism.discover_axes(texts, n=20, seed=1)
+axes_run3 = prism.discover_axes(texts, n=20, seed=2)
+
+# Merge into a unified, non-redundant axis set (LLM-based)
+merged_axes = prism.merge_axes([axes_run1, axes_run2, axes_run3])
+
+# Continue the pipeline with the merged axes
+features = prism.generate_features(texts, merged_axes)
+```
+
 ---
 
 ## Design Principles
@@ -122,12 +139,13 @@ selected = prism.select(vectors, labels, method="lasso")
 
 ## Roadmap
 
-- [ ] Axis discovery (LLM-based)
-- [ ] Feature generation (contrastive, positive/negative examples)
+- [x] Axis discovery (LLM-based)
+- [x] Feature generation (contrastive, positive/negative examples)
 - [ ] QA-based scoring
-- [ ] NLI-based scoring
+- [x] NLI-based scoring
+- [x] Lasso / Elastic Net selection
+- [x] Multi-run axis merging (LLM-based consolidation)
 - [ ] Feature deduplication (semantic similarity + correlation)
-- [ ] Lasso / Elastic Net selection
 - [ ] Visualization of feature space
 - [ ] Evaluation suite (predictive performance vs. embeddings baseline)
 
