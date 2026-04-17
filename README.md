@@ -99,6 +99,7 @@ prism = Prism(llm="gpt-4o", nli_model="cross-encoder/nli-deberta-v3-large")
 # Stage 1: Discover axes from a text collection
 axes = prism.discover_axes(texts, n=20)
 
+
 # Stage 2: Generate features per axis
 features = prism.generate_features(texts, axes)
 
@@ -108,6 +109,28 @@ vectors = prism.score(texts, features, method="nli")
 # Stage 4: Select predictive features
 selected = prism.select(vectors, labels, method="lasso")
 ```
+
+### Local models (Ollama / llama.cpp)
+
+Prism supports any [LangChain](https://python.langchain.com/)-compatible LLM, enabling fully local inference with Ollama or llama.cpp:
+
+```python
+from langchain_ollama import ChatOllama
+from prism import Prism
+
+prism = Prism(llm=ChatOllama(model="llama3.2", format="json"))
+```
+
+```python
+from langchain_community.llms import LlamaCpp
+from prism import Prism
+
+prism = Prism(llm=LlamaCpp(model_path="./models/llama-3.2.gguf"))
+```
+
+Any model that implements LangChain's `BaseChatModel` interface works as a drop-in replacement.
+
+---
 
 ### Multi-run axis merging
 
