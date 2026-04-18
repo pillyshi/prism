@@ -99,15 +99,14 @@ prism = Prism(llm="gpt-4o", nli_model="cross-encoder/nli-deberta-v3-large")
 # Stage 1: Discover axes from a text collection
 axes = prism.discover_axes(texts, n=20)
 
-
 # Stage 2: Generate features per axis
 features = prism.generate_features(texts, axes)
 
-# Stage 3: Score texts → feature vectors
-vectors = prism.score(texts, features, method="nli")
+# Stage 3: Score texts → feature matrices
+matrices = prism.score(texts, features, method="nli")
 
 # Stage 4: Select predictive features
-selected = prism.select(vectors, labels, method="lasso")
+results, predictors = prism.select(matrices)
 ```
 
 ### Local models (Ollama / llama.cpp)
