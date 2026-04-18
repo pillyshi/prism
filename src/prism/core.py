@@ -56,9 +56,14 @@ class Prism:
         n: int = 20,
         context_limit: int = 100_000,
         seed: int | None = None,
+        language: str | None = None,
     ) -> list[Axis]:
-        """Stage 1a: Discover n axes from the text collection."""
-        return self._discoverer.discover(texts, n=n, context_limit=context_limit, seed=seed)
+        """Stage 1a: Discover n axes from the text collection.
+
+        Args:
+            language: If specified, axes are generated in this language (e.g. "Japanese").
+        """
+        return self._discoverer.discover(texts, n=n, context_limit=context_limit, seed=seed, language=language)
 
     def label_axes(
         self,

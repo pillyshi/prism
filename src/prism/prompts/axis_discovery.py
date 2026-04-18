@@ -22,10 +22,11 @@ Here are sample texts from the collection:
 
 {texts_block}
 
-Generate exactly {n} binary axes for this text collection.
+Generate exactly {n} binary axes for this text collection.{language_instruction}
 """
 
 
-def build_user_message(sampled_texts: list[str], n: int) -> str:
+def build_user_message(sampled_texts: list[str], n: int, language: str | None = None) -> str:
     texts_block = "\n---\n".join(sampled_texts)
-    return USER_TEMPLATE.format(texts_block=texts_block, n=n)
+    language_instruction = f"\nGenerate all axis fields (name, question, hypothesis) in {language}." if language else ""
+    return USER_TEMPLATE.format(texts_block=texts_block, n=n, language_instruction=language_instruction)

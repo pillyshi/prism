@@ -74,4 +74,4 @@ class FittedPredictor:
 
     axis: Axis
     scaler: Any   # sklearn StandardScaler
-    model: Any    # sklearn SGDClassifier or SGDRegressor
+    model: Any    # sklearn LogisticRegressionCV or LassoCV

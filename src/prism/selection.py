@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
-from sklearn.linear_model import SGDClassifier, SGDRegressor
-from sklearn.model_selection import GridSearchCV
+from sklearn.linear_model import LassoCV, LogisticRegressionCV
 from sklearn.preprocessing import StandardScaler
 
 from .models import FeatureMatrix, FittedPredictor, SelectionResult
 
 
-_ALPHA_GRID = np.logspace(-4, 0, 20)
-
-
 class FeatureSelector:
-    """Selects predictive features per axis using L1-regularized SGD models.
+    """Selects predictive features per axis using L1-regularized models with built-in CV.
 
-    Classification mode: SGDClassifier(loss="log_loss", penalty="l1"), scoring="f1".
-    Regression mode: SGDRegressor(penalty="l1"), scoring="neg_mean_squared_error".
-    Alpha is tuned via GridSearchCV.
+    Classification mode: LogisticRegressionCV(penalty="l1", solver="saga"), scoring="f1".
+    Regression mode: LassoCV, scoring="neg_mean_squared_error".
     """
 
     def __init__(
@@ -26,12 +19,10 @@ class FeatureSelector:
         cv: int = 5,
         max_iter: int = 5000,
         coef_threshold: float = 1e-4,
-        alpha_grid: np.ndarray | None = None,
     ) -> None:
         self.cv = cv
         self.max_iter = max_iter
         self.coef_threshold = coef_threshold
-        self.alpha_grid = alpha_grid if alpha_grid is not None else _ALPHA_GRID
 
     def select(self, matrix: FeatureMatrix) -> tuple[SelectionResult, FittedPredictor]:
         """Fit an L1-penalized model on the feature matrix and return selected features.
@@ -47,41 +38,42 @@ class FeatureSelector:
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
 
-        estimator, param_grid, scoring = self._build_estimator(matrix.mode)
-        search = GridSearchCV(
-            estimator,
-            param_grid,
-            cv=self.cv,
-            scoring=scoring,
-            refit=True,
-        )
-        search.fit(X_scaled, y)
+        cv_scoring = "f1" if matrix.mode == "classification" else "neg_mean_squared_error"
 
-        best_model = search.best_estimator_
-        # SGDClassifier.coef_ is (1, n_features) for binary; SGDRegressor.coef_ is (n_features,)
-        coef_scaled = best_model.coef_[0] if matrix.mode == "classification" else best_model.coef_
+        if matrix.mode == "classification" and len(np.unique(y)) < 2:
+            return (
+                SelectionResult(axis=matrix.axis, selected_features=[], coef=[], cv_scoring=cv_scoring),
+                FittedPredictor(axis=matrix.axis, scaler=scaler, model=None),
+            )
+
+        model = self._build_estimator(matrix.mode)
+        model.fit(X_scaled, y)
+
+        # LogisticRegressionCV.coef_ is (1, n_features) for binary; LassoCV.coef_ is (n_features,)
+        coef_scaled = model.coef_[0] if matrix.mode == "classification" else model.coef_
         coef_original = coef_scaled / scaler.scale_
+
+        if matrix.mode == "classification":
+            # scores_ is keyed by class label (float); pick the positive class
+            cv_score = float(model.scores_[max(model.scores_)].mean(axis=0).max())
+        else:
+            cv_score = float(-np.min(model.mse_path_.mean(axis=1)))
 
         mask = np.abs(coef_original) > self.coef_threshold
         result = SelectionResult(
             axis=matrix.axis,
             selected_features=[f for f, m in zip(matrix.features, mask) if m],
             coef=coef_original[mask].tolist(),
-            cv_score=float(search.best_score_),
-            cv_scoring=scoring,
+            cv_score=cv_score,
+            cv_scoring=cv_scoring,
         )
-        return result, FittedPredictor(axis=matrix.axis, scaler=scaler, model=best_model)
+        return result, FittedPredictor(axis=matrix.axis, scaler=scaler, model=model)
 
-    def _build_estimator(self, mode: str) -> tuple[Any, dict[str, list], str]:
-        param_grid: dict[str, list] = {"alpha": self.alpha_grid.tolist()}
+    def _build_estimator(self, mode: str) -> LogisticRegressionCV | LassoCV:
         if mode == "classification":
-            return (
-                SGDClassifier(loss="log_loss", penalty="l1", max_iter=self.max_iter, random_state=42),
-                param_grid,
-                "f1",
+            return LogisticRegressionCV(
+                l1_ratios=(1,), solver="saga", scoring="f1",
+                cv=self.cv, max_iter=self.max_iter, random_state=42,
+                use_legacy_attributes=True,
             )
-        return (
-            SGDRegressor(penalty="l1", max_iter=self.max_iter, random_state=42),
-            param_grid,
-            "neg_mean_squared_error",
-        )
+        return LassoCV(cv=self.cv, max_iter=self.max_iter)

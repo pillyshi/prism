@@ -28,6 +28,7 @@ class AxisDiscoverer:
         n: int,
         context_limit: int = 100_000,
         seed: int | None = None,
+        language: str | None = None,
     ) -> list[Axis]:
         """Generate n axes from a random sample of texts.
 
@@ -36,6 +37,7 @@ class AxisDiscoverer:
             n: Number of axes to discover.
             context_limit: Max tokens available in the LLM context window.
             seed: Random seed for reproducible sampling.
+            language: If specified, axes are generated in this language (e.g. "Japanese").
 
         Returns:
             List of Axis objects.
@@ -51,7 +53,7 @@ class AxisDiscoverer:
 
         messages = [
             {"role": "system", "content": prompts.SYSTEM},
-            {"role": "user", "content": prompts.build_user_message(sampled, n)},
+            {"role": "user", "content": prompts.build_user_message(sampled, n, language=language)},
         ]
         result = self._llm.complete_json(messages)
         return [
