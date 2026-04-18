@@ -132,6 +132,30 @@ Any model that implements LangChain's `BaseChatModel` interface works as a drop-
 
 ---
 
+### User-provided labels
+
+If you already have axes of interest and labeled data, NLI-based auto-labeling can be skipped entirely by passing `axes_labels` to both `generate_features()` and `score()`:
+
+```python
+from prism import Prism, Axis, AxisLabels
+
+my_axis = Axis(
+    name="sentiment",
+    question="Does this text express positive sentiment?",
+    hypothesis="This text expresses positive sentiment.",
+)
+# Classification mode: +1.0 / -1.0. Regression mode: continuous [0, 1].
+my_labels = AxisLabels(axis=my_axis, labels=[1.0, -1.0, 1.0, ...])
+
+prism = Prism(llm="gpt-4o")
+
+features_by_axis = prism.generate_features(texts, [my_axis], axes_labels=[my_labels])
+matrices = prism.score(texts, features_by_axis, axes_labels=[my_labels])
+results, predictors = prism.select(matrices)
+```
+
+---
+
 ### Multi-run axis merging
 
 Running Prism multiple times with different random seeds improves axis coverage. Use `merge_axes()` to consolidate axes from multiple runs before feature generation:
