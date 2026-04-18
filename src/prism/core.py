@@ -77,12 +77,17 @@ class Prism:
         n_features: int = 10,
         context_limit: int = 100_000,
         seed: int | None = None,
+        axes_labels: list[AxisLabels] | None = None,
     ) -> dict[Axis, list[Feature]]:
         """Stage 2: Generate discriminative features for each axis.
 
         Internally labels texts per axis before feature generation.
+        If axes_labels is provided, NLI labeling is skipped entirely.
         """
-        axis_labels_list = self.label_axes(texts, axes)
+        if axes_labels is None:
+            axis_labels_list = self.label_axes(texts, axes)
+        else:
+            axis_labels_list = axes_labels
         features_by_axis: dict[Axis, list[Feature]] = {}
         for axis_labels in axis_labels_list:
             features = self._generator.generate(
