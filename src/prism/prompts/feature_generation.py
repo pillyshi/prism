@@ -27,7 +27,7 @@ Negative side (texts where "{axis_question}" is NO):
 ---
 {negative_block}
 
-Generate exactly {n} discriminative features that distinguish the positive side from the negative side.
+Generate exactly {n} discriminative features that distinguish the positive side from the negative side.{language_instruction}
 """
 
 
@@ -37,13 +37,16 @@ def build_user_message(
     positive_texts: list[str],
     negative_texts: list[str],
     n: int,
+    language: str | None = None,
 ) -> str:
     positive_block = "\n---\n".join(positive_texts) if positive_texts else "(none)"
     negative_block = "\n---\n".join(negative_texts) if negative_texts else "(none)"
+    language_instruction = f"\nGenerate all feature fields (name, question, hypothesis) in {language}." if language else ""
     return USER_TEMPLATE.format(
         axis_name=axis_name,
         axis_question=axis_question,
         positive_block=positive_block,
         negative_block=negative_block,
         n=n,
+        language_instruction=language_instruction,
     )

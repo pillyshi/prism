@@ -24,6 +24,7 @@ class FeatureGenerator:
         n_features: int = 10,
         context_limit: int = 100_000,
         seed: int | None = None,
+        language: str | None = None,
     ) -> list[Feature]:
         """Generate features that discriminate positive from negative examples.
 
@@ -64,6 +65,7 @@ class FeatureGenerator:
                     positive_texts=sampled_positive,
                     negative_texts=sampled_negative,
                     n=n_features,
+                    language=language,
                 ),
             },
         ]
