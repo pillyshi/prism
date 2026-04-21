@@ -60,8 +60,7 @@ class FeatureGenerator:
             {
                 "role": "user",
                 "content": prompts.build_user_message(
-                    axis_name=axis.name,
-                    axis_question=axis.question,
+                    axis_hypothesis=axis.hypothesis,
                     positive_texts=sampled_positive,
                     negative_texts=sampled_negative,
                     n=n_features,
@@ -71,11 +70,6 @@ class FeatureGenerator:
         ]
         result = self._llm.complete_json(messages)
         return [
-            Feature(
-                name=item["name"],
-                question=item["question"],
-                hypothesis=item["hypothesis"],
-                axis=axis,
-            )
+            Feature(hypothesis=item["hypothesis"], axis=axis)
             for item in result.get("features", [])
         ]

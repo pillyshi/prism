@@ -1,85 +1,81 @@
-"""Unit tests for AxisMerger."""
+"""Unit tests for NLI-based AxisMerger."""
 from unittest.mock import MagicMock
 
-import pytest
+import numpy as np
 
 from prism import Axis, AxisMerger
 
 
-def _make_axis(name: str) -> Axis:
-    return Axis(
-        name=name,
-        question=f"Does this text have {name}?",
-        hypothesis=f"This text has {name}.",
-    )
+def _make_axis(hypothesis: str) -> Axis:
+    return Axis(hypothesis=hypothesis)
 
 
-def _make_llm(response: dict) -> MagicMock:
-    llm = MagicMock()
-    llm.complete_json.return_value = response
-    return llm
+def _make_nli_model(scores: dict[tuple[str, str], float]) -> MagicMock:
+    """Mock NLIModel that returns entailment scores for (premise, hypothesis) pairs."""
+    nli = MagicMock()
+
+    def score_fn(texts: list[str], hypotheses: list[str]) -> np.ndarray:
+        return np.array([scores.get((t, h), 0.0) for t, h in zip(texts, hypotheses)])
+
+    nli.score.side_effect = score_fn
+    return nli
 
 
 def test_merge_deduplicates_equivalent_axes():
-    axes_run1 = [_make_axis("positive tone")]
-    axes_run2 = [_make_axis("positive emotional tone")]
-    llm = _make_llm({"merged_axes": [
-        {"name": "positive tone", "question": "Does this text express a positive tone?", "hypothesis": "This text expresses a positive tone."}
-    ]})
+    h1 = "This text has a positive tone."
+    h2 = "This text expresses positive sentiment."
+    # h1 entails h2 above threshold → should merge
+    nli = _make_nli_model({(h1, h2): 0.9, (h2, h1): 0.8})
 
-    merger = AxisMerger(llm=llm)
-    merged = merger.merge([axes_run1, axes_run2])
+    merger = AxisMerger(nli_model=nli, threshold=0.5)
+    merged = merger.merge([[_make_axis(h1)], [_make_axis(h2)]])
 
     assert len(merged) == 1
-    assert merged[0].name == "positive tone"
 
 
 def test_merge_preserves_distinct_axes():
-    axes_run1 = [_make_axis("positive tone")]
-    axes_run2 = [_make_axis("factual content")]
-    llm = _make_llm({"merged_axes": [
-        {"name": "positive tone", "question": "q1", "hypothesis": "h1"},
-        {"name": "factual content", "question": "q2", "hypothesis": "h2"},
-    ]})
+    h1 = "This text has a positive tone."
+    h2 = "This text discusses technical topics."
+    # Low entailment in both directions → should not merge
+    nli = _make_nli_model({(h1, h2): 0.1, (h2, h1): 0.1})
 
-    merger = AxisMerger(llm=llm)
-    merged = merger.merge([axes_run1, axes_run2])
+    merger = AxisMerger(nli_model=nli, threshold=0.5)
+    merged = merger.merge([[_make_axis(h1)], [_make_axis(h2)]])
 
     assert len(merged) == 2
-    names = {a.name for a in merged}
-    assert names == {"positive tone", "factual content"}
+    hypotheses = {a.hypothesis for a in merged}
+    assert hypotheses == {h1, h2}
 
 
 def test_merge_returns_axis_objects():
-    axes = [_make_axis("topic A")]
-    llm = _make_llm({"merged_axes": [
-        {"name": "topic A", "question": "Does this text discuss topic A?", "hypothesis": "This text discusses topic A."}
-    ]})
+    h = "This text discusses topic A."
+    nli = _make_nli_model({})
 
-    merger = AxisMerger(llm=llm)
-    merged = merger.merge([axes])
+    merger = AxisMerger(nli_model=nli, threshold=0.5)
+    merged = merger.merge([[_make_axis(h)]])
 
+    assert len(merged) == 1
     assert all(isinstance(a, Axis) for a in merged)
 
 
-def test_merge_empty_response():
-    llm = _make_llm({"merged_axes": []})
-    merger = AxisMerger(llm=llm)
-    merged = merger.merge([[_make_axis("A")]])
+def test_merge_empty_input():
+    nli = _make_nli_model({})
+    merger = AxisMerger(nli_model=nli, threshold=0.5)
+    merged = merger.merge([])
     assert merged == []
 
 
-def test_merge_passes_all_runs_to_llm():
-    axes_run1 = [_make_axis("A")]
-    axes_run2 = [_make_axis("B")]
-    axes_run3 = [_make_axis("C")]
-    llm = _make_llm({"merged_axes": []})
+def test_merge_empty_runs():
+    nli = _make_nli_model({})
+    merger = AxisMerger(nli_model=nli, threshold=0.5)
+    merged = merger.merge([[], []])
+    assert merged == []
 
-    merger = AxisMerger(llm=llm)
-    merger.merge([axes_run1, axes_run2, axes_run3])
 
-    call_args = llm.complete_json.call_args
-    user_content = call_args[0][0][1]["content"]
-    assert "Run 1" in user_content
-    assert "Run 2" in user_content
-    assert "Run 3" in user_content
+def test_merge_single_axis():
+    h = "This text is written in first person."
+    nli = _make_nli_model({})
+    merger = AxisMerger(nli_model=nli, threshold=0.5)
+    merged = merger.merge([[_make_axis(h)]])
+    assert len(merged) == 1
+    assert merged[0].hypothesis == h

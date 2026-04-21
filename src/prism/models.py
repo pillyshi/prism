@@ -8,10 +8,8 @@ import numpy as np
 
 @dataclass(frozen=True)
 class Triple:
-    """Shared triple structure for Axis and Feature."""
+    """Shared structure for Axis and Feature."""
 
-    name: str
-    question: str    # e.g. "Does this text express a positive emotional tone?"
     hypothesis: str  # e.g. "This text has a positive emotional tone."
 
 
@@ -25,6 +23,14 @@ class Feature(Triple):
     """A fine-grained property that explains why a text falls on one side of an axis."""
 
     axis: Axis
+
+
+@dataclass(frozen=True)
+class NamedFeature:
+    """Display-layer wrapper: a human-readable name assigned to a finalized feature."""
+
+    name: str
+    feature: Feature
 
 
 @dataclass
@@ -54,7 +60,7 @@ class FeatureMatrix:
     features: list[Feature]
     X: np.ndarray  # shape (n_texts, n_features)
     y: np.ndarray  # shape (n_texts,); classification: +1.0/-1.0, regression: [0, 1]
-    mode: Literal["classification", "regression"] = "classification"
+    mode: Literal["classification", "regression"] = "regression"
 
 
 @dataclass
@@ -63,15 +69,14 @@ class SelectionResult:
 
     axis: Axis
     selected_features: list[Feature]
-    coef: list[float]  # coefficients in original (unscaled) space
+    coef: list[float]
     cv_score: float = 0.0      # best CV score
     cv_scoring: str = ""       # scoring metric name (e.g. "f1", "neg_mean_squared_error")
 
 
 @dataclass
 class FittedPredictor:
-    """Trained StandardScaler + SGD estimator for one axis."""
+    """Trained estimator for one axis."""
 
     axis: Axis
-    scaler: Any   # sklearn StandardScaler
     model: Any    # sklearn LogisticRegressionCV or LassoCV

@@ -57,11 +57,7 @@ class AxisDiscoverer:
         ]
         result = self._llm.complete_json(messages)
         return [
-            Axis(
-                name=item["name"],
-                question=item["question"],
-                hypothesis=item["hypothesis"],
-            )
+            Axis(hypothesis=item["hypothesis"])
             for item in result.get("axes", [])
         ]
 
@@ -71,7 +67,7 @@ class AxisDiscoverer:
         axes: list[Axis],
         method: Literal["nli", "qa"] = "nli",
         threshold: float = 0.5,
-        mode: Literal["classification", "regression"] = "classification",
+        mode: Literal["classification", "regression"] = "regression",
     ) -> list[AxisLabels]:
         """Label texts for each axis.
 

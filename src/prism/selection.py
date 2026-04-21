@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 from sklearn.linear_model import LassoCV, LogisticRegressionCV
-from sklearn.preprocessing import StandardScaler
 
 from .models import FeatureMatrix, FittedPredictor, SelectionResult
 
@@ -10,7 +9,7 @@ from .models import FeatureMatrix, FittedPredictor, SelectionResult
 class FeatureSelector:
     """Selects predictive features per axis using L1-regularized models with built-in CV.
 
-    Classification mode: LogisticRegressionCV(penalty="l1", solver="saga"), scoring="f1".
+    Classification mode: LogisticRegressionCV(penalty="elasticnet", l1_ratio=1), scoring="f1".
     Regression mode: LassoCV, scoring="neg_mean_squared_error".
     """
 
@@ -35,44 +34,39 @@ class FeatureSelector:
         """
         X, y = matrix.X, matrix.y
 
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-
         cv_scoring = "f1" if matrix.mode == "classification" else "neg_mean_squared_error"
 
         if matrix.mode == "classification" and len(np.unique(y)) < 2:
             return (
                 SelectionResult(axis=matrix.axis, selected_features=[], coef=[], cv_scoring=cv_scoring),
-                FittedPredictor(axis=matrix.axis, scaler=scaler, model=None),
+                FittedPredictor(axis=matrix.axis, model=None),
             )
 
         model = self._build_estimator(matrix.mode)
-        model.fit(X_scaled, y)
+        model.fit(X, y)
 
         # LogisticRegressionCV.coef_ is (1, n_features) for binary; LassoCV.coef_ is (n_features,)
-        coef_scaled = model.coef_[0] if matrix.mode == "classification" else model.coef_
-        coef_original = coef_scaled / scaler.scale_
+        coef = model.coef_[0] if matrix.mode == "classification" else model.coef_
 
         if matrix.mode == "classification":
-            # scores_ is keyed by class label (float); pick the positive class
             cv_score = float(model.scores_[max(model.scores_)].mean(axis=0).max())
         else:
             cv_score = float(-np.min(model.mse_path_.mean(axis=1)))
 
-        mask = np.abs(coef_original) > self.coef_threshold
+        mask = np.abs(coef) > self.coef_threshold
         result = SelectionResult(
             axis=matrix.axis,
             selected_features=[f for f, m in zip(matrix.features, mask) if m],
-            coef=coef_original[mask].tolist(),
+            coef=coef[mask].tolist(),
             cv_score=cv_score,
             cv_scoring=cv_scoring,
         )
-        return result, FittedPredictor(axis=matrix.axis, scaler=scaler, model=model)
+        return result, FittedPredictor(axis=matrix.axis, model=model)
 
     def _build_estimator(self, mode: str) -> LogisticRegressionCV | LassoCV:
         if mode == "classification":
             return LogisticRegressionCV(
-                l1_ratios=(1,), solver="saga", scoring="f1",
+                penalty="elasticnet", l1_ratios=(1,), solver="saga", scoring="f1",
                 cv=self.cv, max_iter=self.max_iter, random_state=42,
             )
         return LassoCV(cv=self.cv, max_iter=self.max_iter)
