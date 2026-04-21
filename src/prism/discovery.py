@@ -67,7 +67,7 @@ class AxisDiscoverer:
         axes: list[Axis],
         method: Literal["nli", "qa"] = "nli",
         threshold: float = 0.5,
-        mode: Literal["classification", "regression"] = "classification",
+        mode: Literal["classification", "regression"] = "regression",
     ) -> list[AxisLabels]:
         """Label texts for each axis.
 

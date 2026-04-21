@@ -60,7 +60,7 @@ class FeatureMatrix:
     features: list[Feature]
     X: np.ndarray  # shape (n_texts, n_features)
     y: np.ndarray  # shape (n_texts,); classification: +1.0/-1.0, regression: [0, 1]
-    mode: Literal["classification", "regression"] = "classification"
+    mode: Literal["classification", "regression"] = "regression"
 
 
 @dataclass

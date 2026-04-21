@@ -32,7 +32,7 @@ class Prism:
         llm: str | Any = "gpt-4o",
         nli_model: str = "cross-encoder/nli-deberta-v3-large",
         api_key: str | None = None,
-        mode: Literal["classification", "regression"] = "classification",
+        mode: Literal["classification", "regression"] = "regression",
     ) -> None:
         if isinstance(llm, str):
             self._llm: BaseLLMClient = LLMClient(model=llm, api_key=api_key)
