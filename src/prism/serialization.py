@@ -10,34 +10,30 @@ import joblib
 from .models import Axis, AxisLabels, Feature, FittedPredictor, SelectionResult
 
 
-def _sanitize_filename(name: str) -> str:
-    """Convert an axis name to a safe filename."""
-    return re.sub(r"[^\w\-]", "_", name).strip("_")
+def _sanitize_filename(text: str) -> str:
+    """Convert a hypothesis to a safe filename (truncated to 60 chars)."""
+    return re.sub(r"[^\w\-]", "_", text[:60]).strip("_")
 
 
 # --- Serialization helpers ---
 
 def _axis_to_dict(axis: Axis) -> dict[str, str]:
-    return {"name": axis.name, "question": axis.question, "hypothesis": axis.hypothesis}
+    return {"hypothesis": axis.hypothesis}
 
 
 def _feature_to_dict(feature: Feature) -> dict[str, Any]:
     return {
-        "name": feature.name,
-        "question": feature.question,
         "hypothesis": feature.hypothesis,
         "axis": _axis_to_dict(feature.axis),
     }
 
 
 def _axis_from_dict(d: dict[str, str]) -> Axis:
-    return Axis(name=d["name"], question=d["question"], hypothesis=d["hypothesis"])
+    return Axis(hypothesis=d["hypothesis"])
 
 
 def _feature_from_dict(d: dict[str, Any]) -> Feature:
     return Feature(
-        name=d["name"],
-        question=d["question"],
         hypothesis=d["hypothesis"],
         axis=_axis_from_dict(d["axis"]),
     )
@@ -68,7 +64,7 @@ def save_session(
     session: dict[str, Any] = {
         "axes": [_axis_to_dict(a) for a in axes],
         "features_by_axis": {
-            a.name: [_feature_to_dict(f) for f in feats]
+            a.hypothesis: [_feature_to_dict(f) for f in feats]
             for a, feats in features_by_axis.items()
         },
         "axis_labels": (
@@ -96,7 +92,7 @@ def save_session(
 
     # Save predictors
     for axis, predictor in predictors.items():
-        filename = _sanitize_filename(axis.name) + ".joblib"
+        filename = _sanitize_filename(axis.hypothesis) + ".joblib"
         joblib.dump(predictor, predictors_dir / filename)
 
 
@@ -116,11 +112,11 @@ def load_session(output_dir: str | Path) -> dict[str, Any]:
         session = json.load(f)
 
     axes = [_axis_from_dict(d) for d in session["axes"]]
-    axis_by_name = {a.name: a for a in axes}
+    axis_by_hypothesis = {a.hypothesis: a for a in axes}
 
     features_by_axis: dict[Axis, list[Feature]] = {
-        axis_by_name[axis_name]: [_feature_from_dict(fd) for fd in feat_list]
-        for axis_name, feat_list in session["features_by_axis"].items()
+        axis_by_hypothesis[hypothesis]: [_feature_from_dict(fd) for fd in feat_list]
+        for hypothesis, feat_list in session["features_by_axis"].items()
     }
 
     axis_labels: list[AxisLabels] | None = None
@@ -146,7 +142,7 @@ def load_session(output_dir: str | Path) -> dict[str, Any]:
     predictors: dict[Axis, FittedPredictor] = {}
     predictors_dir = output_dir / "predictors"
     for axis in axes:
-        filename = _sanitize_filename(axis.name) + ".joblib"
+        filename = _sanitize_filename(axis.hypothesis) + ".joblib"
         path = predictors_dir / filename
         if path.exists():
             predictor = joblib.load(path)

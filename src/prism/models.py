@@ -8,10 +8,8 @@ import numpy as np
 
 @dataclass(frozen=True)
 class Triple:
-    """Shared triple structure for Axis and Feature."""
+    """Shared structure for Axis and Feature."""
 
-    name: str
-    question: str    # e.g. "Does this text express a positive emotional tone?"
     hypothesis: str  # e.g. "This text has a positive emotional tone."
 
 
@@ -25,6 +23,14 @@ class Feature(Triple):
     """A fine-grained property that explains why a text falls on one side of an axis."""
 
     axis: Axis
+
+
+@dataclass(frozen=True)
+class NamedFeature:
+    """Display-layer wrapper: a human-readable name assigned to a finalized feature."""
+
+    name: str
+    feature: Feature
 
 
 @dataclass

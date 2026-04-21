@@ -8,9 +8,10 @@ from .discovery import AxisDiscoverer
 from .generation import FeatureGenerator
 from .llm import BaseLLMClient, LLMClient, LangChainLLMClient
 from .merging import AxisMerger
-from .models import Axis, AxisLabels, Feature, FeatureMatrix, FittedPredictor, SelectionResult
+from .models import Axis, AxisLabels, Feature, FeatureMatrix, FittedPredictor, NamedFeature, SelectionResult
+from .naming import FeatureNamer
 from .nli import NLIModel
-from .scoring import NLIScorer, QAScorer
+from .scoring import NLIScorer
 from .selection import FeatureSelector
 
 
@@ -40,9 +41,9 @@ class Prism:
         self._nli_model = NLIModel(model_name=nli_model)
         self._discoverer = AxisDiscoverer(llm=self._llm, nli_model=self._nli_model)
         self._generator = FeatureGenerator(llm=self._llm)
-        self._merger = AxisMerger(llm=self._llm)
+        self._merger = AxisMerger(nli_model=self._nli_model)
         self._nli_scorer = NLIScorer(model=self._nli_model)
-        self._qa_scorer = QAScorer(llm=self._llm)
+        self._namer = FeatureNamer(llm=self._llm)
         self._mode = mode
         self._selector = FeatureSelector()
 
@@ -114,7 +115,6 @@ class Prism:
         self,
         texts: list[str],
         features_by_axis: dict[Axis, list[Feature]],
-        method: Literal["nli", "qa"] = "nli",
         axes_labels: list[AxisLabels] | None = None,
     ) -> dict[Axis, FeatureMatrix]:
         """Stage 3: Score texts against features, returning one FeatureMatrix per axis.
@@ -122,7 +122,6 @@ class Prism:
         Args:
             texts: Full text collection.
             features_by_axis: Output of generate_features().
-            method: Scoring method.
             axes_labels: Pre-computed axis labels. If None, they are computed internally.
         """
         if axes_labels is None:
@@ -130,11 +129,10 @@ class Prism:
             axes_labels = self.label_axes(texts, axes)
 
         labels_map = {al.axis: al for al in axes_labels}
-        scorer = self._nli_scorer if method == "nli" else self._qa_scorer
 
         matrices: dict[Axis, FeatureMatrix] = {}
         for axis, features in features_by_axis.items():
-            feature_scores = scorer.score(texts, features)
+            feature_scores = self._nli_scorer.score(texts, features)
             X = np.column_stack([fs.scores for fs in feature_scores])
             y = np.array(labels_map[axis].labels, dtype=float)
             matrices[axis] = FeatureMatrix(axis=axis, features=features, X=X, y=y, mode=self._mode)
@@ -156,3 +154,24 @@ class Prism:
             results[matrix.axis] = result
             predictors[matrix.axis] = predictor
         return results, predictors
+
+    def name_features(
+        self,
+        features_by_axis: dict[Axis, list[Feature]],
+        language: str | None = None,
+    ) -> dict[Axis, list[NamedFeature]]:
+        """Assign human-readable names to finalized features (display layer).
+
+        Typically called after select() on the selected features.
+
+        Args:
+            features_by_axis: Features to name, keyed by axis.
+            language: If specified, generate names in this language.
+
+        Returns:
+            Named features keyed by axis.
+        """
+        return {
+            axis: self._namer.name_features(features, language=language)
+            for axis, features in features_by_axis.items()
+        }

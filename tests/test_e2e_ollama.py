@@ -21,26 +21,26 @@ prism = Prism(llm=ChatOllama(model="llama3.2:3b", format="json"))
 print("=== Stage 1: Axis Discovery ===")
 axes = prism.discover_axes(texts, n=3, seed=42)
 for axis in axes:
-    print(f"  [{axis.name}] {axis.question}")
+    print(f"  {axis.hypothesis}")
 
 print("\n=== Stage 2: Feature Generation ===")
 features_by_axis = prism.generate_features(texts, axes, n_features=5, seed=42)
 for axis, features in features_by_axis.items():
-    print(f"\n  Axis: {axis.name}")
+    print(f"\n  Axis: {axis.hypothesis}")
     for f in features:
-        print(f"    - {f.name}")
+        print(f"    - {f.hypothesis}")
 
 print("\n=== Stage 3: Scoring (NLI) ===")
-matrices = prism.score(texts, features_by_axis, method="nli")
+matrices = prism.score(texts, features_by_axis)
 for axis, matrix in matrices.items():
-    print(f"  {axis.name}: X={matrix.X.shape}, y={matrix.y.shape}")
+    print(f"  {axis.hypothesis[:50]}: X={matrix.X.shape}, y={matrix.y.shape}")
 
 print("\n=== Stage 4: Feature Selection (Lasso) ===")
 results, predictors = prism.select(matrices)
 for axis, result in results.items():
-    print(f"\n  Axis: {axis.name}")
+    print(f"\n  Axis: {axis.hypothesis}")
     if result.selected_features:
         for f, c in zip(result.selected_features, result.coef):
-            print(f"    {c:+.3f}  {f.name}")
+            print(f"    {c:+.3f}  {f.hypothesis}")
     else:
         print("    (no features selected)")

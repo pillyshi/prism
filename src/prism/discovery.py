@@ -57,11 +57,7 @@ class AxisDiscoverer:
         ]
         result = self._llm.complete_json(messages)
         return [
-            Axis(
-                name=item["name"],
-                question=item["question"],
-                hypothesis=item["hypothesis"],
-            )
+            Axis(hypothesis=item["hypothesis"])
             for item in result.get("axes", [])
         ]
 
