@@ -69,15 +69,14 @@ class SelectionResult:
 
     axis: Axis
     selected_features: list[Feature]
-    coef: list[float]  # coefficients in original (unscaled) space
+    coef: list[float]
     cv_score: float = 0.0      # best CV score
     cv_scoring: str = ""       # scoring metric name (e.g. "f1", "neg_mean_squared_error")
 
 
 @dataclass
 class FittedPredictor:
-    """Trained StandardScaler + SGD estimator for one axis."""
+    """Trained estimator for one axis."""
 
     axis: Axis
-    scaler: Any   # sklearn StandardScaler
     model: Any    # sklearn LogisticRegressionCV or LassoCV

@@ -79,8 +79,7 @@ predictor = session["predictors"][axis]
 if result.selected_features:
     feature_scores = prism._nli_scorer.score(new_texts, result.selected_features)
     X_new = np.column_stack([fs.scores for fs in feature_scores])
-    X_scaled = predictor.scaler.transform(X_new)
-    y_pred = predictor.model.predict(X_scaled)
+    y_pred = predictor.model.predict(X_new)
     print(f"  Axis: {axis.hypothesis}")
     print(f"  Prediction: {y_pred[0]:+.3f}  ({'positive' if y_pred[0] > 0 else 'negative'})")
 else:
