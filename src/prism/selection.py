@@ -74,6 +74,5 @@ class FeatureSelector:
             return LogisticRegressionCV(
                 l1_ratios=(1,), solver="saga", scoring="f1",
                 cv=self.cv, max_iter=self.max_iter, random_state=42,
-                use_legacy_attributes=True,
             )
         return LassoCV(cv=self.cv, max_iter=self.max_iter)
