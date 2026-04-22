@@ -83,6 +83,11 @@ Stage 3: Feature Selection
 Stage 4 (optional): Naming
   Finalized hypotheses
     → LLM assigns short human-readable labels
+
+Reverse stage (experimental): Text Synthesis
+  Feature matrix (observed scores)
+    → Fit distribution → Sample feature vectors
+    → LLM generates texts satisfying sampled conditions
 ```
 
 Axis discovery and feature generation share the same structure — the pipeline is recursive. An axis is a coarse feature; a feature is a fine-grained axis.
@@ -111,6 +116,10 @@ results, predictors = prism.select(matrices)
 # Stage 5 (optional): Assign human-readable names to selected features
 selected_by_axis = {axis: result.selected_features for axis, result in results.items()}
 named_by_axis = prism.name_features(selected_by_axis)
+
+# Reverse stage (experimental): Generate synthetic texts from feature distributions
+synthetic = prism.synthesize_texts(matrices, n=2, seed=42)
+# synthetic[axis]  → list of 2 generated texts per axis
 ```
 
 ### Local models (Ollama / llama.cpp)
@@ -191,6 +200,7 @@ features = prism.generate_features(texts, merged_axes)
 - [x] Lasso / Elastic Net selection
 - [x] Multi-run axis merging (NLI entailment-based)
 - [x] Post-fixation naming (display layer)
+- [x] Text synthesis — reverse direction: feature vectors → texts (experimental)
 - [ ] Feature deduplication (semantic similarity + correlation)
 - [ ] Visualization of feature space
 - [ ] Evaluation suite (predictive performance vs. embeddings baseline)
