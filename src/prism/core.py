@@ -11,6 +11,7 @@ from .merging import AxisMerger
 from .models import Axis, AxisLabels, Feature, FeatureMatrix, FittedPredictor, NamedFeature, SelectionResult
 from .naming import FeatureNamer
 from .nli import NLIModel
+from .text_synthesis import TextSynthesizer
 from .scoring import NLIScorer
 from .selection import FeatureSelector
 
@@ -46,6 +47,7 @@ class Prism:
         self._namer = FeatureNamer(llm=self._llm)
         self._mode = mode
         self._selector = FeatureSelector()
+        self._synthesizer = TextSynthesizer(llm=self._llm)
 
     def merge_axes(self, axes_per_run: list[list[Axis]]) -> list[Axis]:
         """Merge axes from multiple discovery runs using LLM-based consolidation."""
@@ -154,6 +156,27 @@ class Prism:
             results[matrix.axis] = result
             predictors[matrix.axis] = predictor
         return results, predictors
+
+    def synthesize_texts(
+        self,
+        matrices: dict[Axis, FeatureMatrix],
+        n: int = 1,
+        language: str | None = None,
+        seed: int | None = None,
+    ) -> dict[Axis, list[str]]:
+        """Reverse stage: sample feature vectors and generate synthetic texts.
+
+        Args:
+            matrices: FeatureMatrix per axis — output of score() or select().
+            n: Number of synthetic texts to generate per axis.
+            language: If specified, instruct the LLM to write in this language.
+            seed: Optional integer seed for reproducible sampling.
+        """
+        rng = np.random.default_rng(seed)
+        return {
+            axis: self._synthesizer.synthesize(matrix, n=n, language=language, rng=rng)
+            for axis, matrix in matrices.items()
+        }
 
     def name_features(
         self,

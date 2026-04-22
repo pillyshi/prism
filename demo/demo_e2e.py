@@ -62,6 +62,13 @@ for axis, named_features in named_by_axis.items():
     for nf in named_features:
         print(f"    [{nf.name}] {nf.feature.hypothesis}")
 
+print("\n=== Stage 6: Text Synthesis ===")
+synthetic = prism.synthesize_texts(matrices, n=2, seed=42)
+for axis, synth_texts in synthetic.items():
+    print(f"\n  Axis: {axis.hypothesis}")
+    for i, t in enumerate(synth_texts, 1):
+        print(f"    [{i}] {t}")
+
 print("\n=== Save Session ===")
 save_session("output", axes, features_by_axis, results, predictors)
 print("  Saved to ./output/")
