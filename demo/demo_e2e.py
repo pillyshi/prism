@@ -81,7 +81,7 @@ for axis, synth_texts in synthetic.items():
 print("\n=== Stage 7: CV Evaluation — Augmentation Impact (Experimental) ===")
 augmentor = make_feature_augmentor(n=len(texts), seed=42)
 for axis, matrix in matrices.items():
-    clf = LogisticRegression() if matrix.mode == "classification" else Ridge()
+    clf = LogisticRegression(random_state=42) if matrix.mode == "classification" else Ridge()
     baseline = cross_val_score(clf, matrix, cv=5, seed=42)
     augmented = cross_val_score_with_augmentation(
         clf, matrix, augmentor, n_aug=len(texts), cv=5, seed=42
