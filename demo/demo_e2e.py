@@ -1,6 +1,15 @@
 """End-to-end test with a small product review corpus."""
 import numpy as np
-from prism import Prism, save_session, load_session
+from sklearn.linear_model import LogisticRegression, Ridge
+
+from prism import (
+    Prism,
+    cross_val_score,
+    cross_val_score_with_augmentation,
+    load_session,
+    make_feature_augmentor,
+    save_session,
+)
 
 texts = [
     "This blender is amazing! It crushes ice perfectly and the motor is super powerful. Will definitely buy again.",
@@ -68,6 +77,18 @@ for axis, synth_texts in synthetic.items():
     print(f"\n  Axis: {axis.hypothesis}")
     for i, t in enumerate(synth_texts, 1):
         print(f"    [{i}] {t}")
+
+print("\n=== Stage 7: CV Evaluation — Augmentation Impact (Experimental) ===")
+augmentor = make_feature_augmentor(n=len(texts), seed=42)
+for axis, matrix in matrices.items():
+    clf = LogisticRegression() if matrix.mode == "classification" else Ridge()
+    baseline = cross_val_score(clf, matrix, cv=5, seed=42)
+    augmented = cross_val_score_with_augmentation(
+        clf, matrix, augmentor, n_aug=len(texts), cv=5, seed=42
+    )
+    print(f"\n  Axis: {axis.hypothesis[:60]}")
+    print(f"    baseline:  {baseline.mean():.3f} ± {baseline.std():.3f}")
+    print(f"    augmented: {augmented.mean():.3f} ± {augmented.std():.3f}")
 
 print("\n=== Save Session ===")
 save_session("output", axes, features_by_axis, results, predictors)
