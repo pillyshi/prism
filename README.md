@@ -88,6 +88,12 @@ Reverse stage (experimental): Text Synthesis
   Feature matrix (observed scores)
     → Fit distribution → Sample feature vectors
     → LLM generates texts satisfying sampled conditions
+
+Evaluation stage (experimental): CV Impact Assessment
+  Feature matrix + downstream classifier
+    → Baseline CV: cross_val_score(clf, matrix)
+    → Augmented CV: cross_val_score_with_augmentation(clf, matrix, augmentor)
+    → Compare scores to assess whether augmentation helps
 ```
 
 Axis discovery and feature generation share the same structure — the pipeline is recursive. An axis is a coarse feature; a feature is a fine-grained axis.
@@ -183,6 +189,27 @@ features = prism.generate_features(texts, merged_axes)
 
 ---
 
+### CV Evaluation (experimental)
+
+Use `cross_val_score_with_augmentation()` to measure whether feature-vector augmentation from `synthesize_texts()` actually improves a downstream classifier. Augmented data is derived per fold from `X_train` only — validation folds always use original texts.
+
+```python
+from sklearn.linear_model import LogisticRegression
+from prism import cross_val_score, cross_val_score_with_augmentation, make_feature_augmentor
+
+augmentor = make_feature_augmentor(n=len(texts), seed=42)
+
+for axis, matrix in matrices.items():
+    baseline  = cross_val_score(LogisticRegression(random_state=42), matrix, cv=5, seed=42)
+    augmented = cross_val_score_with_augmentation(
+        LogisticRegression(random_state=42), matrix, augmentor, n_aug=len(texts), cv=5, seed=42
+    )
+    print(f"baseline:  {baseline.mean():.3f} ± {baseline.std():.3f}")
+    print(f"augmented: {augmented.mean():.3f} ± {augmented.std():.3f}")
+```
+
+---
+
 ## Design Principles
 
 - **Interpretable by construction** — every feature is grounded in a natural language hypothesis
@@ -201,6 +228,7 @@ features = prism.generate_features(texts, merged_axes)
 - [x] Multi-run axis merging (NLI entailment-based)
 - [x] Post-fixation naming (display layer)
 - [x] Text synthesis — reverse direction: feature vectors → texts (experimental)
+- [x] CV-based augmentation evaluation (experimental)
 - [ ] Feature deduplication (semantic similarity + correlation)
 - [ ] Visualization of feature space
 - [ ] Evaluation suite (predictive performance vs. embeddings baseline)
