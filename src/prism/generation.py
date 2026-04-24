@@ -41,8 +41,8 @@ class FeatureGenerator:
         axis = axis_labels.axis
         rng = random.Random(seed)
 
-        positive_texts = [t for t, l in zip(texts, axis_labels.labels) if l == 1]
-        negative_texts = [t for t, l in zip(texts, axis_labels.labels) if l == -1]
+        positive_texts = [t for t, l in zip(texts, axis_labels.labels) if l >= 0.5]
+        negative_texts = [t for t, l in zip(texts, axis_labels.labels) if l < 0.5]
 
         # Split budget evenly between positive and negative sides
         half_budget = (context_limit - _PROMPT_OVERHEAD) // 2
