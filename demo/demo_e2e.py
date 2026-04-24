@@ -100,15 +100,15 @@ print(f"  Loaded {len(session['axes'])} axes, {len(session['results'])} results,
 
 print("\n=== Inference on new text ===")
 new_texts = ["This blender is fantastic and very durable!"]
-axis = session["axes"][0]
-result = session["results"][axis]
-predictor = session["predictors"][axis]
+axis = next((a for a in session["axes"] if session["results"][a].selected_features), None)
+result = session["results"][axis] if axis else None
 
-if result.selected_features:
+if axis and result and result.selected_features:
     feature_scores = prism._nli_scorer.score(new_texts, result.selected_features)
     X_new = np.column_stack([fs.scores for fs in feature_scores])
-    y_pred = predictor.model.predict(X_new)
     print(f"  Axis: {axis.hypothesis}")
-    print(f"  Prediction: {y_pred[0]:+.3f}  ({'positive' if y_pred[0] > 0 else 'negative'})")
+    print(f"  Feature vector (shape={X_new.shape}):")
+    for f, score in zip(result.selected_features, X_new[0]):
+        print(f"    {score:.3f}  {f.hypothesis}")
 else:
-    print(f"  Axis '{axis.hypothesis[:40]}' has no selected features — skipping inference.")
+    print("  No axis with selected features — skipping inference.")
