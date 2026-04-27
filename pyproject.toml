@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "prism-text"
-version = "0.6.1"
+version = "0.7.0"
 description = "Language-Defined Feature Space for Interpretable Text Analysis"
 authors = []
 packages = [{include = "prism", from = "src"}]
