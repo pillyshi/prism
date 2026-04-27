@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 SYSTEM = """\
-You are an expert text analyst. Your task is to generate features that characterize \
-a text collection as a whole.
+You are an expert text analyst. Your task is to generate features that describe \
+properties of individual texts in a collection.
 
 Each feature must be defined by:
-- hypothesis: a declarative statement suitable for NLI scoring \
-(e.g. "This text uses technical vocabulary.")
+- hypothesis: a declarative statement about a single text, suitable for NLI scoring \
+(e.g. "This text expresses satisfaction with the product." or \
+"This text mentions issues with build quality.")
 
 Requirements:
-- Features must describe properties present in a substantial portion of the collection
+- Each hypothesis must be a statement about a single text, starting with "This text"
+- Features must capture properties that are meaningfully present in some texts \
+but not all — avoid trivially universal or trivially absent properties
 - The hypothesis must be self-contained
 - Aim for diverse, non-redundant features
 
@@ -22,7 +25,8 @@ Here are sample texts from the collection:
 ---
 {texts_block}
 
-Generate exactly {n} features that characterize this collection.{language_instruction}
+Generate exactly {n} features that describe properties of individual texts \
+commonly found in this collection.{language_instruction}
 """
 
 
