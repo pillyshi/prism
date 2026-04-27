@@ -210,3 +210,77 @@ def test_sample_language_in_prompt():
     s.sample(1, llm=llm, language="Japanese", rng=np.random.default_rng(0))
     content = _get_user_content(llm)
     assert "Japanese" in content
+
+
+# ---------------------------------------------------------------------------
+# fit / sample — lengths
+# ---------------------------------------------------------------------------
+
+def test_fit_with_lengths_stores_params():
+    X = np.random.default_rng(0).uniform(0, 1, (10, 3))
+    lengths = np.array([100, 200, 150, 300, 250, 180, 120, 90, 400, 220])
+    s = CollectionSynthesizer()
+    s.fit(X, _make_features(3), lengths=lengths)
+    assert s._len_mu is not None
+    assert s._len_sigma is not None
+    assert s._len_mu == pytest.approx(np.log(lengths).mean())
+    assert s._len_sigma == pytest.approx(np.log(lengths).std())
+
+
+def test_fit_without_lengths_stores_none():
+    s = _fit()
+    assert s._len_mu is None
+    assert s._len_sigma is None
+
+
+def test_fit_single_length_uses_default_sigma():
+    X = np.array([[0.5, 0.5]])
+    s = CollectionSynthesizer()
+    s.fit(X, _make_features(2), lengths=np.array([200]))
+    assert s._len_sigma == pytest.approx(0.3)
+
+
+def test_sample_length_in_prompt_when_fitted():
+    X = np.full((5, 2), 0.5)
+    lengths = np.full(5, 200)
+    s = CollectionSynthesizer()
+    s.fit(X, _make_features(2), lengths=lengths)
+    llm = _make_llm(["t"])
+    s.sample(1, llm=llm, rng=np.random.default_rng(0))
+    content = _get_user_content(llm)
+    assert "approximately" in content
+    assert "characters" in content
+
+
+def test_sample_no_length_in_prompt_when_not_fitted():
+    s = _fit()
+    llm = _make_llm(["t"])
+    s.sample(1, llm=llm, rng=np.random.default_rng(0))
+    content = _get_user_content(llm)
+    assert "characters" not in content
+
+
+def test_save_load_roundtrip_with_lengths(tmp_path):
+    X = np.random.default_rng(0).uniform(0, 1, (10, 3))
+    lengths = np.array([100, 200, 150, 300, 250, 180, 120, 90, 400, 220])
+    s = CollectionSynthesizer()
+    s.fit(X, _make_features(3), lengths=lengths)
+    path = tmp_path / "col.json"
+    s.save(path)
+
+    loaded = CollectionSynthesizer.load(path)
+    assert loaded._len_mu == pytest.approx(s._len_mu)
+    assert loaded._len_sigma == pytest.approx(s._len_sigma)
+
+
+def test_load_old_format_without_lengths(tmp_path):
+    """Files saved before length support must load without error."""
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps({
+        "features": [{"hypothesis": "A."}],
+        "mean": [0.5],
+        "cov": [[1.0]],
+    }))
+    loaded = CollectionSynthesizer.load(path)
+    assert loaded._len_mu is None
+    assert loaded._len_sigma is None

@@ -17,20 +17,23 @@ Generate a text that satisfies the following conditions:
 def build_user_message(
     conditions: list[tuple[str, str]],
     language: str | None = None,
+    length: int | None = None,
 ) -> str:
     """Build the user message for collection-based text synthesis.
 
     Args:
         conditions: List of (hypothesis, formatted_label) pairs.
         language: If specified, instruct the LLM to respond in this language.
+        length: If specified, target character count to include in the prompt.
     """
     if conditions:
         lines = [f'- "{hypothesis}" → {label}' for hypothesis, label in conditions]
         conditions_block = "\n".join(lines)
     else:
         conditions_block = "(no specific conditions)"
+    length_instruction = f"\n\nTarget length: approximately {length} characters." if length is not None else ""
     language_instruction = f"\n\nRespond in {language}." if language else ""
     return _USER_TEMPLATE.format(
         conditions_block=conditions_block,
-        language_instruction=language_instruction,
+        language_instruction=length_instruction + language_instruction,
     )

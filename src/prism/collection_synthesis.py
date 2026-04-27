@@ -38,12 +38,19 @@ class CollectionSynthesizer:
         texts = synthesizer.sample(n=5, llm=llm_client)
     """
 
-    def fit(self, X: np.ndarray, features: list[CollectionFeature]) -> CollectionSynthesizer:
+    def fit(
+        self,
+        X: np.ndarray,
+        features: list[CollectionFeature],
+        lengths: np.ndarray | None = None,
+    ) -> CollectionSynthesizer:
         """Estimate the multivariate Gaussian distribution from X.
 
         Args:
             X: Feature matrix of shape (n_texts, n_features).
             features: CollectionFeatures corresponding to columns of X.
+            lengths: Character counts of shape (n_texts,). If provided, a
+                log-normal distribution is fitted and used during sampling.
 
         Returns:
             self, for chaining.
@@ -59,6 +66,15 @@ class CollectionSynthesizer:
         else:
             self._mean = X.mean(axis=0)
             self._cov = np.atleast_2d(np.cov(X.T)) + np.eye(n_features) * 1e-6
+
+        if lengths is not None and len(lengths) > 0:
+            log_lengths = np.log(np.clip(lengths, 1, None).astype(float))
+            self._len_mu: float | None = float(log_lengths.mean())
+            self._len_sigma: float | None = float(log_lengths.std()) if len(lengths) > 1 else 0.3
+        else:
+            self._len_mu = None
+            self._len_sigma = None
+
         return self
 
     def save(self, path: str | Path) -> None:
@@ -67,6 +83,8 @@ class CollectionSynthesizer:
             "features": [{"hypothesis": f.hypothesis} for f in self._features],
             "mean": self._mean.tolist(),
             "cov": self._cov.tolist(),
+            "len_mu": self._len_mu,
+            "len_sigma": self._len_sigma,
         }
         Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -87,6 +105,8 @@ class CollectionSynthesizer:
         obj._features = features
         obj._mean = mean
         obj._cov = cov
+        obj._len_mu = data.get("len_mu")
+        obj._len_sigma = data.get("len_sigma")
         return obj
 
     def sample(
@@ -134,7 +154,13 @@ class CollectionSynthesizer:
                 if threshold is not None and score < threshold:
                     continue
                 conditions.append((feature.hypothesis, _format_score(float(score), n_levels)))
-            user_msg = prompts.build_user_message(conditions, language=language)
+
+            length: int | None = None
+            if self._len_mu is not None:
+                sigma = max(self._len_sigma or 0.0, 1e-6)
+                length = max(1, int(round(rng.lognormal(self._len_mu, sigma))))
+
+            user_msg = prompts.build_user_message(conditions, language=language, length=length)
             messages = [
                 {"role": "system", "content": prompts.SYSTEM},
                 {"role": "user", "content": user_msg},
