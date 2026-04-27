@@ -3,13 +3,17 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression, Ridge
 
 from prism import (
+    CollectionDescriber,
+    CollectionSynthesizer,
     Prism,
     cross_val_score,
     cross_val_score_with_augmentation,
     load_session,
     make_feature_augmentor,
     save_session,
+    score_collection_features,
 )
+from prism.nli import NLIModel
 
 texts = [
     "This blender is amazing! It crushes ice perfectly and the motor is super powerful. Will definitely buy again.",
@@ -112,3 +116,43 @@ if axis and result and result.selected_features:
         print(f"    {score:.3f}  {f.hypothesis}")
 else:
     print("  No axis with selected features — skipping inference.")
+
+# ---------------------------------------------------------------------------
+# Collection synthesis (new independent pipeline)
+# ---------------------------------------------------------------------------
+
+llm = prism._llm
+nli_model = prism._nli_model
+
+print("\n=== Collection Stage 1: Describe ===")
+describer = CollectionDescriber(llm=llm)
+collection_features = describer.describe(texts, n_features=8, seed=42)
+for f in collection_features:
+    print(f"  - {f.hypothesis}")
+
+print("\n=== Collection Stage 2: Score ===")
+X_col = score_collection_features(texts, collection_features, nli_model)
+print(f"  X shape: {X_col.shape}")
+print(f"  Feature mean scores:")
+for f, mean_score in zip(collection_features, X_col.mean(axis=0)):
+    print(f"    {mean_score:.3f}  {f.hypothesis}")
+
+print("\n=== Collection Stage 3: Fit & Save ===")
+synthesizer = CollectionSynthesizer()
+synthesizer.fit(X_col, collection_features)
+synthesizer.save("output/collection_synthesizer.json")
+print("  Saved to output/collection_synthesizer.json")
+
+print("\n=== Collection Stage 4: Load & Sample ===")
+loaded_synthesizer = CollectionSynthesizer.load("output/collection_synthesizer.json")
+print("  [continuous scores]")
+texts_continuous = loaded_synthesizer.sample(2, llm=llm, rng=np.random.default_rng(42))
+for i, t in enumerate(texts_continuous, 1):
+    print(f"    [{i}] {t}")
+
+print("  [3-level: LOW/MED/HIGH, threshold=0.3]")
+texts_levels = loaded_synthesizer.sample(
+    2, llm=llm, n_levels=3, threshold=0.3, rng=np.random.default_rng(42)
+)
+for i, t in enumerate(texts_levels, 1):
+    print(f"    [{i}] {t}")

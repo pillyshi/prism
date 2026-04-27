@@ -26,6 +26,13 @@ class Feature(Triple):
 
 
 @dataclass(frozen=True)
+class CollectionFeature:
+    """A property characterizing a text collection as a whole (no axis)."""
+
+    hypothesis: str
+
+
+@dataclass(frozen=True)
 class NamedFeature:
     """Display-layer wrapper: a human-readable name assigned to a finalized feature."""
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .models import Feature, FeatureScores
+from .models import CollectionFeature, Feature, FeatureScores
 from .nli import NLIModel
 
 
@@ -23,3 +23,23 @@ class NLIScorer:
             scores = self._model.score(texts, hypotheses)
             results.append(FeatureScores(feature=feature, scores=scores.tolist()))
         return results
+
+
+def score_collection_features(
+    texts: list[str],
+    features: list[CollectionFeature],
+    model: NLIModel,
+) -> np.ndarray:
+    """Score texts against CollectionFeatures using NLI.
+
+    Returns:
+        np.ndarray of shape (n_texts, n_features).
+    """
+    if not features:
+        return np.empty((len(texts), 0))
+    columns = []
+    for feature in features:
+        hypotheses = [feature.hypothesis] * len(texts)
+        scores = model.score(texts, hypotheses)
+        columns.append(scores)
+    return np.column_stack(columns)
