@@ -215,28 +215,30 @@ def test_sample_language_in_prompt():
 # fit / sample — lengths
 # ---------------------------------------------------------------------------
 
-def test_fit_with_lengths_stores_params():
+def test_fit_with_lengths_stores_joint():
     X = np.random.default_rng(0).uniform(0, 1, (10, 3))
     lengths = np.array([100, 200, 150, 300, 250, 180, 120, 90, 400, 220])
     s = TextSynthesizer()
     s.fit(X, _make_features(3), lengths=lengths)
-    assert s._len_mu is not None
-    assert s._len_sigma is not None
-    assert s._len_mu == pytest.approx(np.log(lengths).mean())
-    assert s._len_sigma == pytest.approx(np.log(lengths).std())
+    assert s._has_length is True
+    assert s._mean.shape == (4,)
+    assert s._cov.shape == (4, 4)
+    assert s._mean[-1] == pytest.approx(np.log(lengths.astype(float)).mean())
 
 
-def test_fit_without_lengths_stores_none():
+def test_fit_without_lengths():
     s = _fit()
-    assert s._len_mu is None
-    assert s._len_sigma is None
+    assert s._has_length is False
+    assert s._mean.shape == (3,)
 
 
-def test_fit_single_length_uses_default_sigma():
+def test_fit_single_length_uses_identity_cov():
     X = np.array([[0.5, 0.5]])
     s = TextSynthesizer()
     s.fit(X, _make_features(2), lengths=np.array([200]))
-    assert s._len_sigma == pytest.approx(0.3)
+    assert s._has_length is True
+    assert s._mean.shape == (3,)
+    np.testing.assert_array_equal(s._cov, np.eye(3))
 
 
 def test_sample_length_in_prompt_when_fitted():
@@ -268,8 +270,9 @@ def test_save_load_roundtrip_with_lengths(tmp_path):
     s.save(path)
 
     loaded = TextSynthesizer.load(path)
-    assert loaded._len_mu == pytest.approx(s._len_mu)
-    assert loaded._len_sigma == pytest.approx(s._len_sigma)
+    assert loaded._has_length == s._has_length
+    np.testing.assert_allclose(loaded._mean, s._mean)
+    np.testing.assert_allclose(loaded._cov, s._cov)
 
 
 def test_load_old_format_without_lengths(tmp_path):
@@ -281,8 +284,7 @@ def test_load_old_format_without_lengths(tmp_path):
         "cov": [[1.0]],
     }))
     loaded = TextSynthesizer.load(path)
-    assert loaded._len_mu is None
-    assert loaded._len_sigma is None
+    assert loaded._has_length is False
 
 
 # ---------------------------------------------------------------------------

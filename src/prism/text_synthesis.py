@@ -43,36 +43,40 @@ class TextSynthesizer:
         features: list[Feature],
         lengths: np.ndarray | None = None,
     ) -> TextSynthesizer:
-        """Estimate the multivariate Gaussian distribution from X.
+        """Estimate the joint distribution of feature scores and text length from X.
 
         Args:
             X: Feature matrix of shape (n_texts, n_features).
             features: Features corresponding to columns of X.
-            lengths: Character counts of shape (n_texts,). If provided, a
-                log-normal distribution is fitted and used during sampling.
+            lengths: Character counts of shape (n_texts,). If provided,
+                log(lengths) is appended as an extra dimension and fitted
+                jointly with features so that their correlation is captured.
 
         Returns:
             self, for chaining.
         """
         self._features = list(features)
         n_texts, n_features = X.shape
-        if n_texts == 0:
-            self._mean = np.full(n_features, 0.5)
-            self._cov = np.eye(n_features)
-        elif n_texts == 1:
-            self._mean = X[0].copy()
-            self._cov = np.eye(n_features)
-        else:
-            self._mean = X.mean(axis=0)
-            self._cov = np.atleast_2d(np.cov(X.T)) + np.eye(n_features) * 1e-6
 
         if lengths is not None and len(lengths) > 0:
             log_lengths = np.log(np.clip(lengths, 1, None).astype(float))
-            self._len_mu: float | None = float(log_lengths.mean())
-            self._len_sigma: float | None = float(log_lengths.std()) if len(lengths) > 1 else 0.3
+            X_aug = np.column_stack([X, log_lengths]) if n_features > 0 else log_lengths.reshape(-1, 1)
+            self._has_length = True
         else:
-            self._len_mu = None
-            self._len_sigma = None
+            X_aug = X
+            self._has_length = False
+
+        n_aug = X_aug.shape[1]
+
+        if n_texts == 0:
+            self._mean = np.full(n_aug, 0.5)
+            self._cov = np.eye(n_aug)
+        elif n_texts == 1:
+            self._mean = X_aug[0].copy()
+            self._cov = np.eye(n_aug)
+        else:
+            self._mean = X_aug.mean(axis=0)
+            self._cov = np.atleast_2d(np.cov(X_aug.T)) + np.eye(n_aug) * 1e-6
 
         return self
 
@@ -82,8 +86,7 @@ class TextSynthesizer:
             "features": [{"hypothesis": f.hypothesis} for f in self._features],
             "mean": self._mean.tolist(),
             "cov": self._cov.tolist(),
-            "len_mu": self._len_mu,
-            "len_sigma": self._len_sigma,
+            "has_length": self._has_length,
         }
         Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -95,17 +98,18 @@ class TextSynthesizer:
         mean = np.array(data["mean"])
         cov = np.array(data["cov"])
         n = len(features)
-        if mean.shape != (n,) or cov.shape != (n, n):
+        has_length = data.get("has_length", False)
+        n_aug = n + (1 if has_length else 0)
+        if mean.shape != (n_aug,) or cov.shape != (n_aug, n_aug):
             raise ValueError(
-                f"Serialized shape mismatch: expected ({n},) and ({n},{n}), "
+                f"Serialized shape mismatch: expected ({n_aug},) and ({n_aug},{n_aug}), "
                 f"got {mean.shape} and {cov.shape}"
             )
         obj = cls.__new__(cls)
         obj._features = features
         obj._mean = mean
         obj._cov = cov
-        obj._len_mu = data.get("len_mu")
-        obj._len_sigma = data.get("len_sigma")
+        obj._has_length = has_length
         return obj
 
     def sample_with_vectors(
@@ -137,17 +141,17 @@ class TextSynthesizer:
             rng = np.random.default_rng()
 
         n_features = len(self._features)
-        if n_features == 0:
-            samples = np.empty((n, 0))
+        n_aug = n_features + (1 if self._has_length else 0)
+
+        if n_aug == 0:
+            full_samples = np.empty((n, 0))
         else:
-            samples = np.clip(
-                rng.multivariate_normal(mean=self._mean, cov=self._cov, size=n),
-                0.0,
-                1.0,
-            )
+            full_samples = rng.multivariate_normal(mean=self._mean, cov=self._cov, size=n)
+
+        feature_samples = np.clip(full_samples[:, :n_features], 0.0, 1.0)
 
         results: list[str] = []
-        for sample in samples:
+        for i, sample in enumerate(feature_samples):
             conditions: list[tuple[str, str]] = []
             for feature, score in zip(self._features, sample):
                 if threshold is not None and score < threshold:
@@ -155,9 +159,8 @@ class TextSynthesizer:
                 conditions.append((feature.hypothesis, _format_score(float(score), n_levels)))
 
             length: int | None = None
-            if self._len_mu is not None:
-                sigma = max(self._len_sigma or 0.0, 1e-6)
-                length = max(1, int(round(rng.lognormal(self._len_mu, sigma))))
+            if self._has_length:
+                length = max(1, int(round(np.exp(full_samples[i, n_features]))))
 
             user_msg = prompts.build_user_message(conditions, language=language, length=length)
             messages = [
@@ -165,7 +168,7 @@ class TextSynthesizer:
                 {"role": "user", "content": user_msg},
             ]
             results.append(llm.complete(messages))
-        return results, samples
+        return results, feature_samples
 
     def sample(
         self,
