@@ -1,160 +1,204 @@
-from __future__ import annotations
+"""Unit tests for evaluation and TextSynthesizer.sample_with_vectors."""
+from unittest.mock import MagicMock
 
 import numpy as np
-from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.model_selection import StratifiedKFold
+import pytest
 
-from prism.evaluation import (
-    cross_val_score,
-    cross_val_score_with_augmentation,
-    make_feature_augmentor,
+from prism import (
+    Feature,
+    TextSynthesizer,
+    FitEvaluation,
+    GenerationEvaluation,
+    evaluate_fit,
+    evaluate_generation,
 )
-from prism.models import Axis, Feature, FeatureMatrix
 
 
-def _make_matrix_clf(n_texts: int = 40, n_features: int = 4, seed: int = 0) -> FeatureMatrix:
-    rng = np.random.default_rng(seed)
-    X = rng.uniform(0, 1, (n_texts, n_features))
-    y = np.array([1.0] * (n_texts // 2) + [-1.0] * (n_texts // 2))
-    axis = Axis(hypothesis="Test axis.")
-    features = [Feature(hypothesis=f"F{i}.", axis=axis) for i in range(n_features)]
-    return FeatureMatrix(axis=axis, features=features, X=X, y=y, mode="classification")
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_features(n: int) -> list[Feature]:
+    return [Feature(hypothesis=f"Feature {i}.") for i in range(n)]
 
 
-def _make_matrix_reg(n_texts: int = 40, n_features: int = 4, seed: int = 0) -> FeatureMatrix:
-    rng = np.random.default_rng(seed)
-    X = rng.uniform(0, 1, (n_texts, n_features))
-    y = rng.uniform(0, 1, n_texts)
-    axis = Axis(hypothesis="Regression axis.")
-    features = [Feature(hypothesis=f"F{i}.", axis=axis) for i in range(n_features)]
-    return FeatureMatrix(axis=axis, features=features, X=X, y=y, mode="regression")
+def _fit_synthesizer(n_features: int = 3, seed: int = 0) -> TextSynthesizer:
+    X = np.random.default_rng(seed).uniform(0, 1, (10, n_features))
+    s = TextSynthesizer()
+    s.fit(X, _make_features(n_features))
+    return s
 
 
-# --- make_feature_augmentor ---
-
-def test_augmentor_output_shape() -> None:
-    matrix = _make_matrix_clf()
-    augmentor = make_feature_augmentor(seed=0)
-    X_aug, y_aug = augmentor(matrix.X, matrix.y, 5)
-    assert X_aug.shape == (5, matrix.X.shape[1])
-    assert y_aug.shape == (5,)
+def _make_llm(responses: list[str]) -> MagicMock:
+    llm = MagicMock()
+    llm.complete.side_effect = responses
+    return llm
 
 
-def test_augmentor_x_clipped() -> None:
-    matrix = _make_matrix_clf()
-    augmentor = make_feature_augmentor(seed=0)
-    X_aug, _ = augmentor(matrix.X, matrix.y, 20)
-    assert X_aug.min() >= 0.0
-    assert X_aug.max() <= 1.0
+# ---------------------------------------------------------------------------
+# evaluate_fit — output shape
+# ---------------------------------------------------------------------------
+
+def test_evaluate_fit_output_shapes():
+    rng = np.random.default_rng(0)
+    X_orig = rng.uniform(0, 1, (20, 4))
+    X_sampled = rng.uniform(0, 1, (15, 4))
+    result = evaluate_fit(X_orig, X_sampled)
+    assert isinstance(result, FitEvaluation)
+    assert result.wasserstein.shape == (4,)
+    assert result.mean_diff.shape == (4,)
+    assert result.std_diff.shape == (4,)
 
 
-def test_augmentor_y_from_training_set() -> None:
-    matrix = _make_matrix_clf()
-    augmentor = make_feature_augmentor(seed=0)
-    _, y_aug = augmentor(matrix.X, matrix.y, 20)
-    for label in y_aug:
-        assert label in matrix.y
+def test_evaluate_fit_identical_returns_near_zero():
+    X = np.random.default_rng(1).uniform(0, 1, (20, 3))
+    result = evaluate_fit(X, X)
+    np.testing.assert_allclose(result.wasserstein, np.zeros(3), atol=1e-10)
+    np.testing.assert_allclose(result.mean_diff, np.zeros(3), atol=1e-10)
+    np.testing.assert_allclose(result.std_diff, np.zeros(3), atol=1e-10)
 
 
-def test_augmentor_reproducible() -> None:
-    matrix = _make_matrix_clf()
-    a1 = make_feature_augmentor(seed=42)
-    a2 = make_feature_augmentor(seed=42)
-    X1, y1 = a1(matrix.X, matrix.y, 10)
-    X2, y2 = a2(matrix.X, matrix.y, 10)
+def test_evaluate_fit_mean_diff_sign():
+    X_orig = np.full((10, 2), 0.3)
+    X_sampled = np.full((10, 2), 0.7)
+    result = evaluate_fit(X_orig, X_sampled)
+    assert np.all(result.mean_diff > 0)
+
+
+def test_evaluate_fit_std_diff_sign():
+    rng = np.random.default_rng(2)
+    X_orig = np.full((20, 1), 0.5)
+    X_sampled = rng.uniform(0, 1, (20, 1))
+    result = evaluate_fit(X_orig, X_sampled)
+    assert result.std_diff[0] > 0
+
+
+def test_evaluate_fit_different_row_counts():
+    rng = np.random.default_rng(3)
+    X_orig = rng.uniform(0, 1, (30, 2))
+    X_sampled = rng.uniform(0, 1, (10, 2))
+    result = evaluate_fit(X_orig, X_sampled)
+    assert result.wasserstein.shape == (2,)
+
+
+def test_evaluate_fit_zero_features():
+    X_orig = np.empty((10, 0))
+    X_sampled = np.empty((10, 0))
+    result = evaluate_fit(X_orig, X_sampled)
+    assert result.wasserstein.shape == (0,)
+    assert result.mean_diff.shape == (0,)
+    assert result.std_diff.shape == (0,)
+
+
+def test_evaluate_fit_wasserstein_non_negative():
+    rng = np.random.default_rng(4)
+    X_orig = rng.uniform(0, 1, (20, 5))
+    X_sampled = rng.uniform(0, 1, (20, 5))
+    result = evaluate_fit(X_orig, X_sampled)
+    assert np.all(result.wasserstein >= 0)
+
+
+# ---------------------------------------------------------------------------
+# evaluate_generation — output shape and values
+# ---------------------------------------------------------------------------
+
+def test_evaluate_generation_output_shapes():
+    rng = np.random.default_rng(5)
+    X_sampled = rng.uniform(0, 1, (15, 3))
+    X_scored = rng.uniform(0, 1, (15, 3))
+    result = evaluate_generation(X_sampled, X_scored)
+    assert isinstance(result, GenerationEvaluation)
+    assert result.wasserstein.shape == (3,)
+    assert result.mae.shape == (3,)
+
+
+def test_evaluate_generation_identical_returns_near_zero():
+    X = np.random.default_rng(6).uniform(0, 1, (20, 3))
+    result = evaluate_generation(X, X)
+    np.testing.assert_allclose(result.wasserstein, np.zeros(3), atol=1e-10)
+    np.testing.assert_allclose(result.mae, np.zeros(3), atol=1e-10)
+
+
+def test_evaluate_generation_mae_values():
+    X_sampled = np.zeros((10, 2))
+    X_scored = np.column_stack([np.full(10, 0.2), np.full(10, 0.5)])
+    result = evaluate_generation(X_sampled, X_scored)
+    np.testing.assert_allclose(result.mae[0], 0.2, atol=1e-10)
+    np.testing.assert_allclose(result.mae[1], 0.5, atol=1e-10)
+
+
+def test_evaluate_generation_row_mismatch_raises():
+    X_sampled = np.zeros((10, 3))
+    X_scored = np.zeros((8, 3))
+    with pytest.raises(ValueError, match="same number of rows"):
+        evaluate_generation(X_sampled, X_scored)
+
+
+def test_evaluate_generation_wasserstein_non_negative():
+    rng = np.random.default_rng(7)
+    X_sampled = rng.uniform(0, 1, (15, 4))
+    X_scored = rng.uniform(0, 1, (15, 4))
+    result = evaluate_generation(X_sampled, X_scored)
+    assert np.all(result.wasserstein >= 0)
+
+
+def test_evaluate_generation_zero_features():
+    X_sampled = np.empty((10, 0))
+    X_scored = np.empty((10, 0))
+    result = evaluate_generation(X_sampled, X_scored)
+    assert result.wasserstein.shape == (0,)
+    assert result.mae.shape == (0,)
+
+
+# ---------------------------------------------------------------------------
+# TextSynthesizer.sample_with_vectors
+# ---------------------------------------------------------------------------
+
+def test_sample_with_vectors_return_type():
+    s = _fit_synthesizer()
+    llm = _make_llm(["t1", "t2"])
+    texts, X_sampled = s.sample_with_vectors(2, llm=llm, rng=np.random.default_rng(0))
+    assert isinstance(texts, list)
+    assert isinstance(X_sampled, np.ndarray)
+
+
+def test_sample_with_vectors_matrix_shape():
+    s = _fit_synthesizer(n_features=3)
+    llm = _make_llm(["t"] * 5)
+    _, X_sampled = s.sample_with_vectors(5, llm=llm, rng=np.random.default_rng(0))
+    assert X_sampled.shape == (5, 3)
+
+
+def test_sample_with_vectors_matrix_clipped():
+    s = _fit_synthesizer()
+    llm = _make_llm(["t"] * 10)
+    _, X_sampled = s.sample_with_vectors(10, llm=llm, rng=np.random.default_rng(0))
+    assert np.all(X_sampled >= 0.0)
+    assert np.all(X_sampled <= 1.0)
+
+
+def test_sample_with_vectors_reproducible():
+    s = _fit_synthesizer()
+    responses = ["a", "b", "c"]
+    texts1, X1 = s.sample_with_vectors(3, llm=_make_llm(responses), rng=np.random.default_rng(99))
+    texts2, X2 = s.sample_with_vectors(3, llm=_make_llm(responses), rng=np.random.default_rng(99))
+    assert texts1 == texts2
     np.testing.assert_array_equal(X1, X2)
-    np.testing.assert_array_equal(y1, y2)
 
 
-# --- cross_val_score ---
-
-def test_cross_val_score_shape_clf() -> None:
-    matrix = _make_matrix_clf()
-    scores = cross_val_score(LogisticRegression(), matrix, cv=5, seed=0)
-    assert scores.shape == (5,)
-
-
-def test_cross_val_score_shape_reg() -> None:
-    matrix = _make_matrix_reg()
-    scores = cross_val_score(Ridge(), matrix, cv=5, seed=0)
-    assert scores.shape == (5,)
+def test_sample_with_vectors_n_zero():
+    s = _fit_synthesizer(n_features=3)
+    llm = _make_llm([])
+    texts, X_sampled = s.sample_with_vectors(0, llm=llm)
+    assert texts == []
+    assert X_sampled.shape == (0, 3)
 
 
-def test_cross_val_score_custom_scoring() -> None:
-    matrix = _make_matrix_clf()
-    scores = cross_val_score(LogisticRegression(), matrix, cv=3, scoring="accuracy", seed=0)
-    assert scores.shape == (3,)
-    assert all(0.0 <= s <= 1.0 for s in scores)
-
-
-# --- cross_val_score_with_augmentation ---
-
-def test_augmented_shape_clf() -> None:
-    matrix = _make_matrix_clf()
-    augmentor = make_feature_augmentor(seed=0)
-    scores = cross_val_score_with_augmentation(
-        LogisticRegression(), matrix, augmentor, n_aug=5, cv=5, seed=0
-    )
-    assert scores.shape == (5,)
-
-
-def test_augmented_shape_reg() -> None:
-    matrix = _make_matrix_reg()
-    augmentor = make_feature_augmentor(seed=0)
-    scores = cross_val_score_with_augmentation(
-        Ridge(), matrix, augmentor, n_aug=5, cv=5, seed=0
-    )
-    assert scores.shape == (5,)
-
-
-def test_augmented_no_data_leakage() -> None:
-    matrix = _make_matrix_clf(n_texts=40, n_features=3, seed=1)
-    seen_train: list[np.ndarray] = []
-
-    def recording_augmentor(
-        X_train: np.ndarray, y_train: np.ndarray, n: int
-    ) -> tuple[np.ndarray, np.ndarray]:
-        seen_train.append(X_train.copy())
-        return np.zeros((n, X_train.shape[1])), np.zeros(n)
-
-    cross_val_score_with_augmentation(
-        LogisticRegression(), matrix, recording_augmentor, n_aug=2, cv=5, seed=0
-    )
-    splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
-    for fold_i, (_, val_idx) in enumerate(splitter.split(matrix.X, matrix.y)):
-        for val_row in matrix.X[val_idx]:
-            for train_row in seen_train[fold_i]:
-                assert not np.allclose(val_row, train_row)
-
-
-def test_augmented_estimator_cloned_per_fold() -> None:
-    matrix = _make_matrix_clf()
-    fit_calls: list[int] = [0]
-
-    class CountingEstimator(LogisticRegression):
-        def fit(self, X, y, **kw):  # type: ignore[override]
-            fit_calls[0] += 1
-            return super().fit(X, y, **kw)
-
-    augmentor = make_feature_augmentor(seed=0)
-    cross_val_score_with_augmentation(
-        CountingEstimator(), matrix, augmentor, n_aug=2, cv=5, seed=0
-    )
-    assert fit_calls[0] == 5
-
-
-def test_augmented_n_aug_passed_correctly() -> None:
-    matrix = _make_matrix_clf()
-    received_n: list[int] = []
-
-    def recording_augmentor(
-        X_train: np.ndarray, y_train: np.ndarray, n: int
-    ) -> tuple[np.ndarray, np.ndarray]:
-        received_n.append(n)
-        return np.zeros((n, X_train.shape[1])), np.zeros(n)
-
-    cross_val_score_with_augmentation(
-        LogisticRegression(), matrix, recording_augmentor, n_aug=7, cv=4, seed=0
-    )
-    assert all(n == 7 for n in received_n)
-    assert len(received_n) == 4
+def test_sample_with_vectors_zero_features():
+    X = np.empty((5, 0))
+    s = TextSynthesizer()
+    s.fit(X, [])
+    llm = _make_llm(["t"] * 3)
+    texts, X_sampled = s.sample_with_vectors(3, llm=llm, rng=np.random.default_rng(0))
+    assert len(texts) == 3
+    assert X_sampled.shape == (3, 0)

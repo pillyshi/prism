@@ -1,72 +1,77 @@
 from __future__ import annotations
 
 import numpy as np
-from sklearn.linear_model import LassoCV, LogisticRegressionCV
+from sklearn.linear_model import Lasso
 
-from .models import FeatureMatrix, FittedPredictor, SelectionResult
+from .models import Feature, FeatureDependency
+
+_COEF_THRESHOLD = 1e-4
 
 
 class FeatureSelector:
-    """Selects predictive features per axis using L1-regularized models with built-in CV.
+    """Analyzes feature dependencies and removes redundant features.
 
-    Classification mode: LogisticRegressionCV(penalty="elasticnet", l1_ratio=1), scoring="f1".
-    Regression mode: LassoCV, scoring="neg_mean_squared_error".
+    For each feature i, fits a Lasso model predicting X[:,i] from all other
+    features. A high R² indicates the feature is redundant (well-explained by others).
+
+    Usage::
+
+        selector = FeatureSelector().fit(X, features)
+        print(selector.dependencies_)          # inspection
+        X2, features2 = selector.transform(X, features)
     """
 
-    def __init__(
-        self,
-        cv: int = 5,
-        max_iter: int = 5000,
-        coef_threshold: float = 1e-4,
-    ) -> None:
-        self.cv = cv
-        self.max_iter = max_iter
-        self.coef_threshold = coef_threshold
+    def __init__(self, r2_threshold: float = 0.9) -> None:
+        self.r2_threshold = r2_threshold
+        self.dependencies_: list[FeatureDependency] = []
 
-    def select(self, matrix: FeatureMatrix) -> tuple[SelectionResult, FittedPredictor]:
-        """Fit an L1-penalized model on the feature matrix and return selected features.
+    def fit(self, X: np.ndarray, features: list[Feature]) -> FeatureSelector:
+        """Fit dependency models for each feature.
 
         Args:
-            matrix: FeatureMatrix with X, y, and mode.
+            X: Feature matrix of shape (n_texts, n_features).
+            features: Features corresponding to columns of X.
 
         Returns:
-            Tuple of (SelectionResult, FittedPredictor).
+            self, for chaining.
         """
-        X, y = matrix.X, matrix.y
-
-        cv_scoring = "f1" if matrix.mode == "classification" else "neg_mean_squared_error"
-
-        if matrix.mode == "classification" and len(np.unique(y)) < 2:
-            return (
-                SelectionResult(axis=matrix.axis, selected_features=[], coef=[], cv_scoring=cv_scoring),
-                FittedPredictor(axis=matrix.axis, model=None),
+        n_features = X.shape[1]
+        self.dependencies_ = []
+        for i in range(n_features):
+            if n_features == 1:
+                self.dependencies_.append(
+                    FeatureDependency(feature=features[i], r2=0.0, predictors=[], coef=[])
+                )
+                continue
+            others = [j for j in range(n_features) if j != i]
+            X_others = X[:, others]
+            y_i = X[:, i]
+            model = Lasso(alpha=0.01, max_iter=5000)
+            model.fit(X_others, y_i)
+            r2 = float(model.score(X_others, y_i))
+            predictors = [features[j] for j, c in zip(others, model.coef_) if abs(c) > _COEF_THRESHOLD]
+            coef = [float(c) for c in model.coef_ if abs(c) > _COEF_THRESHOLD]
+            self.dependencies_.append(
+                FeatureDependency(feature=features[i], r2=r2, predictors=predictors, coef=coef)
             )
+        return self
 
-        model = self._build_estimator(matrix.mode)
-        model.fit(X, y)
+    def transform(
+        self, X: np.ndarray, features: list[Feature]
+    ) -> tuple[np.ndarray, list[Feature]]:
+        """Return X and features with redundant features removed.
 
-        # LogisticRegressionCV.coef_ is (1, n_features) for binary; LassoCV.coef_ is (n_features,)
-        coef = model.coef_[0] if matrix.mode == "classification" else model.coef_
+        A feature is considered redundant if its R² (from fit()) exceeds
+        r2_threshold, meaning it can be well-predicted from other features.
 
-        if matrix.mode == "classification":
-            cv_score = float(model.scores_[max(model.scores_)].mean(axis=0).max())
-        else:
-            cv_score = float(-np.min(model.mse_path_.mean(axis=1)))
+        Args:
+            X: Feature matrix of shape (n_texts, n_features).
+            features: Features corresponding to columns of X.
 
-        mask = np.abs(coef) > self.coef_threshold
-        result = SelectionResult(
-            axis=matrix.axis,
-            selected_features=[f for f, m in zip(matrix.features, mask) if m],
-            coef=coef[mask].tolist(),
-            cv_score=cv_score,
-            cv_scoring=cv_scoring,
-        )
-        return result, FittedPredictor(axis=matrix.axis, model=model)
-
-    def _build_estimator(self, mode: str) -> LogisticRegressionCV | LassoCV:
-        if mode == "classification":
-            return LogisticRegressionCV(
-                penalty="elasticnet", l1_ratios=(1,), solver="saga", scoring="f1",
-                cv=self.cv, max_iter=self.max_iter, random_state=42,
-            )
-        return LassoCV(cv=self.cv, max_iter=self.max_iter)
+        Returns:
+            Tuple of (X_reduced, features_reduced).
+        """
+        keep = [i for i, dep in enumerate(self.dependencies_) if dep.r2 <= self.r2_threshold]
+        if not keep:
+            return np.empty((X.shape[0], 0)), []
+        return X[:, keep], [features[i] for i in keep]

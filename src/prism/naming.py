@@ -6,7 +6,7 @@ from .prompts import feature_naming as prompts
 
 
 class FeatureNamer:
-    """Assigns human-readable names to finalized features via a single LLM call."""
+    """Assigns human-readable names to features via a single LLM call."""
 
     def __init__(self, llm: BaseLLMClient) -> None:
         self._llm = llm
@@ -19,7 +19,7 @@ class FeatureNamer:
         """Generate short labels for a list of features.
 
         Args:
-            features: Finalized features to name.
+            features: Features to name.
             language: If specified, generate labels in this language.
 
         Returns:
@@ -34,7 +34,6 @@ class FeatureNamer:
         ]
         result = self._llm.complete_json(messages)
         names: list[str] = result.get("names", [])
-        # Pad with truncated hypothesis if model returns fewer names than expected
         named: list[NamedFeature] = []
         for i, feature in enumerate(features):
             name = names[i] if i < len(names) else feature.hypothesis[:40]

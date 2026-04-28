@@ -1,19 +1,16 @@
-"""End-to-end test with a small product review corpus."""
+"""End-to-end demo with a small product review corpus."""
+from pathlib import Path
+
 import numpy as np
-from sklearn.linear_model import LogisticRegression, Ridge
 
 from prism import (
-    CollectionDescriber,
-    CollectionSynthesizer,
+    FeatureSelector,
     Prism,
-    cross_val_score,
-    cross_val_score_with_augmentation,
-    load_session,
-    make_feature_augmentor,
-    save_session,
-    score_collection_features,
+    TextSynthesizer,
+    evaluate_fit,
+    evaluate_generation,
 )
-from prism.nli import NLIModel
+from prism.llm import LLMClient
 
 texts = [
     "This blender is amazing! It crushes ice perfectly and the motor is super powerful. Will definitely buy again.",
@@ -38,121 +35,84 @@ texts = [
     "Outstanding performance. Blends everything smoothly and the noise level is surprisingly low.",
 ]
 
-prism = Prism(llm="gpt-4o-mini")
+# Binary sentiment labels (1 = positive, 0 = negative)
+y = np.array([1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1], dtype=float)
 
-print("=== Stage 1: Axis Discovery ===")
-axes = prism.discover_axes(texts, n=5, seed=42)
-for axis in axes:
-    print(f"  {axis.hypothesis}")
-
-print("\n=== Stage 2: Feature Generation ===")
-features_by_axis = prism.generate_features(texts, axes, n_features=8, seed=42)
-for axis, features in features_by_axis.items():
-    print(f"\n  Axis: {axis.hypothesis}")
-    for f in features:
-        print(f"    - {f.hypothesis}")
-
-print("\n=== Stage 3: Scoring (NLI) ===")
-matrices = prism.score(texts, features_by_axis)
-for axis, matrix in matrices.items():
-    print(f"  {axis.hypothesis[:50]}: X={matrix.X.shape}, y={matrix.y.shape}")
-
-print("\n=== Stage 4: Feature Selection (Lasso) ===")
-results, predictors = prism.select(matrices)
-for axis, result in results.items():
-    print(f"\n  Axis: {axis.hypothesis}")
-    if result.selected_features:
-        for f, c in zip(result.selected_features, result.coef):
-            print(f"    {c:+.3f}  {f.hypothesis}")
-    else:
-        print("    (no features selected)")
-
-print("\n=== Stage 5: Naming ===")
-selected_by_axis = {axis: result.selected_features for axis, result in results.items()}
-named_by_axis = prism.name_features(selected_by_axis)
-for axis, named_features in named_by_axis.items():
-    print(f"\n  Axis: {axis.hypothesis}")
-    for nf in named_features:
-        print(f"    [{nf.name}] {nf.feature.hypothesis}")
-
-print("\n=== Stage 6: Text Synthesis ===")
-synthetic = prism.synthesize_texts(matrices, n=2, seed=42)
-for axis, synth_texts in synthetic.items():
-    print(f"\n  Axis: {axis.hypothesis}")
-    for i, t in enumerate(synth_texts, 1):
-        print(f"    [{i}] {t}")
-
-print("\n=== Stage 7: CV Evaluation — Augmentation Impact (Experimental) ===")
-augmentor = make_feature_augmentor(n=len(texts), seed=42)
-for axis, matrix in matrices.items():
-    clf = LogisticRegression(random_state=42) if matrix.mode == "classification" else Ridge()
-    baseline = cross_val_score(clf, matrix, cv=5, seed=42)
-    augmented = cross_val_score_with_augmentation(
-        clf, matrix, augmentor, n_aug=len(texts), cv=5, seed=42
-    )
-    print(f"\n  Axis: {axis.hypothesis[:60]}")
-    print(f"    baseline:  {baseline.mean():.3f} ± {baseline.std():.3f}")
-    print(f"    augmented: {augmented.mean():.3f} ± {augmented.std():.3f}")
-
-print("\n=== Save Session ===")
-save_session("output", axes, features_by_axis, results, predictors)
-print("  Saved to ./output/")
-
-print("\n=== Load Session ===")
-session = load_session("output")
-print(f"  Loaded {len(session['axes'])} axes, {len(session['results'])} results, {len(session['predictors'])} predictors")
-
-print("\n=== Inference on new text ===")
-new_texts = ["This blender is fantastic and very durable!"]
-axis = next((a for a in session["axes"] if session["results"][a].selected_features), None)
-result = session["results"][axis] if axis else None
-
-if axis and result and result.selected_features:
-    feature_scores = prism._nli_scorer.score(new_texts, result.selected_features)
-    X_new = np.column_stack([fs.scores for fs in feature_scores])
-    print(f"  Axis: {axis.hypothesis}")
-    print(f"  Feature vector (shape={X_new.shape}):")
-    for f, score in zip(result.selected_features, X_new[0]):
-        print(f"    {score:.3f}  {f.hypothesis}")
-else:
-    print("  No axis with selected features — skipping inference.")
+llm = LLMClient("gpt-4o-mini")
+prism = Prism(llm=llm, nli_model="cross-encoder/nli-deberta-v3-large")
 
 # ---------------------------------------------------------------------------
-# Collection synthesis (new independent pipeline)
+print("=== Stage 1: Feature Generation ===")
 # ---------------------------------------------------------------------------
-
-llm = prism._llm
-nli_model = prism._nli_model
-
-print("\n=== Collection Stage 1: Describe ===")
-describer = CollectionDescriber(llm=llm)
-collection_features = describer.describe(texts, n_features=8, seed=42)
-for f in collection_features:
+features = prism.generate_features(texts, n=15, seed=42)
+for f in features:
     print(f"  - {f.hypothesis}")
 
-print("\n=== Collection Stage 2: Score ===")
-X_col = score_collection_features(texts, collection_features, nli_model)
-print(f"  X shape: {X_col.shape}")
-print(f"  Feature mean scores:")
-for f, mean_score in zip(collection_features, X_col.mean(axis=0)):
+# ---------------------------------------------------------------------------
+print("\n=== Stage 2: Scoring (NLI) ===")
+# ---------------------------------------------------------------------------
+X = prism.score(texts, features)
+print(f"  X shape: {X.shape}")
+print("  Feature mean scores:")
+for f, mean_score in zip(features, X.mean(axis=0)):
     print(f"    {mean_score:.3f}  {f.hypothesis}")
 
-print("\n=== Collection Stage 3: Fit & Save ===")
-synthesizer = CollectionSynthesizer()
-synthesizer.fit(X_col, collection_features)
-synthesizer.save("output/collection_synthesizer.json")
-print("  Saved to output/collection_synthesizer.json")
+# ---------------------------------------------------------------------------
+print("\n=== Stage 3: Feature Naming ===")
+# ---------------------------------------------------------------------------
+named = prism.name_features(features)
+for nf in named:
+    print(f"  [{nf.name}]  {nf.feature.hypothesis}")
 
-print("\n=== Collection Stage 4: Load & Sample ===")
-loaded_synthesizer = CollectionSynthesizer.load("output/collection_synthesizer.json")
-print("  [continuous scores]")
-texts_continuous = loaded_synthesizer.sample(2, llm=llm, rng=np.random.default_rng(42))
-for i, t in enumerate(texts_continuous, 1):
-    print(f"    [{i}] {t}")
+# ---------------------------------------------------------------------------
+print("\n=== Stage 4: Feature Dependency Analysis ===")
+# ---------------------------------------------------------------------------
+selector = FeatureSelector(r2_threshold=0.9).fit(X, features)
+print("  R²  hypothesis")
+for dep in selector.dependencies_:
+    flag = " ← redundant" if dep.r2 > 0.9 else ""
+    print(f"  {dep.r2:.2f}  {dep.feature.hypothesis}{flag}")
 
-print("  [3-level: LOW/MED/HIGH, threshold=0.3]")
-texts_levels = loaded_synthesizer.sample(
-    2, llm=llm, n_levels=3, threshold=0.3, rng=np.random.default_rng(42)
+X2, features2 = selector.transform(X, features)
+print(f"\n  After transform: {X.shape[1]} → {X2.shape[1]} features")
+
+# ---------------------------------------------------------------------------
+print("\n=== Stage 5: Fit (y ~ X) ===")
+# ---------------------------------------------------------------------------
+result = prism.fit(X2, y, features2)
+print(f"  Scoring: {result.scoring}, score={result.score:.3f}")
+print(f"  intercept: {result.intercept:+.3f}")
+pairs = sorted(zip(result.coef, result.features), key=lambda x: abs(x[0]), reverse=True)
+for coef, f in pairs:
+    print(f"    {coef:+.3f}  {f.hypothesis}")
+
+# ---------------------------------------------------------------------------
+print("\n=== Stage 6: Text Synthesis ===")
+# ---------------------------------------------------------------------------
+Path("output").mkdir(exist_ok=True)
+
+synthesizer = TextSynthesizer().fit(X2, features2)
+synthesizer.save("output/synthesizer.json")
+print("  Saved to output/synthesizer.json")
+
+loaded = TextSynthesizer.load("output/synthesizer.json")
+synth_texts, X_sampled = loaded.sample_with_vectors(
+    3, llm=llm, n_levels=3, rng=np.random.default_rng(42)
 )
-for i, t in enumerate(texts_levels, 1):
-    print(f"    [{i}] {t}")
+for i, t in enumerate(synth_texts, 1):
+    print(f"  [{i}] {t}")
+
+# ---------------------------------------------------------------------------
+print("\n=== Stage 7: Synthesis Evaluation ===")
+# ---------------------------------------------------------------------------
+# evaluate_fit: how well the Gaussian captures the original distribution
+fit_eval = evaluate_fit(X2, X_sampled)
+print(f"  Fit Wasserstein (mean): {fit_eval.wasserstein.mean():.3f}")
+
+# evaluate_generation: how faithfully the LLM followed the target feature vectors
+X_scored = prism.score(synth_texts, features2)
+gen_eval = evaluate_generation(X_sampled, X_scored)
+print(f"  Generation MAE (mean): {gen_eval.mae.mean():.3f}")
+print("  Per-feature MAE:")
+for f, mae in zip(features2, gen_eval.mae):
+    print(f"    {mae:.3f}  {f.hypothesis}")
