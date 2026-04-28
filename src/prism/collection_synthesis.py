@@ -109,7 +109,7 @@ class CollectionSynthesizer:
         obj._len_sigma = data.get("len_sigma")
         return obj
 
-    def sample(
+    def sample_with_vectors(
         self,
         n: int,
         *,
@@ -118,8 +118,8 @@ class CollectionSynthesizer:
         n_levels: int | None = None,
         threshold: float | None = None,
         rng: np.random.Generator | None = None,
-    ) -> list[str]:
-        """Sample n feature vectors and synthesize texts.
+    ) -> tuple[list[str], np.ndarray]:
+        """Sample n feature vectors, synthesize texts, and return both.
 
         Args:
             n: Number of texts to generate.
@@ -132,7 +132,7 @@ class CollectionSynthesizer:
             rng: Optional numpy Generator for reproducibility.
 
         Returns:
-            List of n generated texts.
+            Tuple of (texts, X_sampled) where X_sampled has shape (n, n_features).
         """
         if rng is None:
             rng = np.random.default_rng()
@@ -166,4 +166,34 @@ class CollectionSynthesizer:
                 {"role": "user", "content": user_msg},
             ]
             results.append(llm.complete(messages))
-        return results
+        return results, samples
+
+    def sample(
+        self,
+        n: int,
+        *,
+        llm: BaseLLMClient,
+        language: str | None = None,
+        n_levels: int | None = None,
+        threshold: float | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> list[str]:
+        """Sample n feature vectors and synthesize texts.
+
+        Args:
+            n: Number of texts to generate.
+            llm: LLM client used for text generation.
+            language: If specified, instruct the LLM to respond in this language.
+            n_levels: Discretize scores into k levels (None=continuous, 2=YES/NO,
+                3=LOW/MED/HIGH, k>=4=numeric labels). Default: None.
+            threshold: Only include features with score >= threshold in the prompt.
+                Default: None (include all features).
+            rng: Optional numpy Generator for reproducibility.
+
+        Returns:
+            List of n generated texts.
+        """
+        texts, _ = self.sample_with_vectors(
+            n, llm=llm, language=language, n_levels=n_levels, threshold=threshold, rng=rng
+        )
+        return texts
