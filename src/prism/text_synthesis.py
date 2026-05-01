@@ -112,6 +112,33 @@ class TextSynthesizer:
         obj._has_length = has_length
         return obj
 
+    def sample_vectors(
+        self,
+        n: int,
+        *,
+        rng: np.random.Generator | None = None,
+    ) -> np.ndarray:
+        """Sample n feature vectors from the fitted distribution without synthesizing texts.
+
+        Args:
+            n: Number of vectors to sample.
+            rng: Optional numpy Generator for reproducibility.
+
+        Returns:
+            Array of shape (n, n_features) with values clipped to [0, 1].
+        """
+        if rng is None:
+            rng = np.random.default_rng()
+
+        n_features = len(self._features)
+        n_aug = n_features + (1 if self._has_length else 0)
+
+        if n_aug == 0:
+            return np.empty((n, 0))
+
+        full_samples = rng.multivariate_normal(mean=self._mean, cov=self._cov, size=n)
+        return np.clip(full_samples[:, :n_features], 0.0, 1.0)
+
     def sample_with_vectors(
         self,
         n: int,
