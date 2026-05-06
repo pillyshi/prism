@@ -59,7 +59,7 @@ FeatureSelector.transform(...)     Remove redundant features → X', features'
   └─────────────────────────────────────────────────────────┘
         ↓
 TextSynthesizer.fit(X', features') Gaussian distribution → save/load
-TextSynthesizer.sample(n, llm)     Synthesize new texts
+TextSynthesizer.synthesize(X, llm) Synthesize texts from a feature matrix
 ```
 
 ---
@@ -98,12 +98,12 @@ print(f"score ({result.scoring}): {result.score:.3f}")
 for coef, f in sorted(zip(result.coef, result.features), key=lambda x: abs(x[0]), reverse=True):
     print(f"  {coef:+.3f}  {f.hypothesis}")
 
-# 6. Synthesize new texts from the feature distribution
+# 6. Synthesize texts from the feature matrix
 synthesizer = TextSynthesizer().fit(X2, features2)
 synthesizer.save("synthesizer.json")
 
 synthesizer = TextSynthesizer.load("synthesizer.json")
-synthetic = synthesizer.sample(5, llm=llm)
+synthetic = synthesizer.synthesize(X2, llm=llm)
 ```
 
 ### Local models (Ollama / llama.cpp)
@@ -132,7 +132,7 @@ features = prism.generate_features(texts)
 X = prism.score(texts, features)
 
 synthesizer = TextSynthesizer().fit(X, features)
-texts = synthesizer.sample(10, llm=gpt4)   # GPT-4 for synthesis
+texts = synthesizer.synthesize(X, llm=gpt4)   # GPT-4 for synthesis
 ```
 
 ---
@@ -163,20 +163,28 @@ X2, features2 = selector.transform(X, features)
 
 ## Text Synthesis
 
-`TextSynthesizer` fits a multivariate Gaussian on `X` and generates new texts by sampling feature vectors and prompting an LLM:
+`TextSynthesizer` fits a multivariate Gaussian on `X` (for inspection and reference) and
+synthesizes texts from any caller-supplied feature matrix — such as the original `X`,
+a subset of it, or an augmented version produced by SMOTE or similar methods:
 
 ```python
 synthesizer = TextSynthesizer().fit(X, features)
 synthesizer.save("synthesizer.json")           # persist fitted distribution
 
 synthesizer = TextSynthesizer.load("synthesizer.json")
-texts = synthesizer.sample(
-    n=10,
+texts = synthesizer.synthesize(
+    X,
     llm=llm,
     n_levels=3,        # discretize: LOW / MED / HIGH
     threshold=0.3,     # only include features above this score
-    rng=np.random.default_rng(42),
 )
+```
+
+Pass a `lengths` array (character counts) to control the target length of each generated text:
+
+```python
+lengths = np.array([200, 500, 150])
+texts = synthesizer.synthesize(X[:3], llm=llm, lengths=lengths)
 ```
 
 ### Synthesis Evaluation
@@ -185,7 +193,8 @@ texts = synthesizer.sample(
 from prism import evaluate_fit, evaluate_generation
 
 # How well does the Gaussian capture the original distribution?
-texts_synth, X_sampled = synthesizer.sample_with_vectors(20, llm=llm)
+X_sampled = X  # or augmented X from SMOTE, etc.
+texts_synth = synthesizer.synthesize(X_sampled, llm=llm)
 fit_eval = evaluate_fit(X, X_sampled)
 print(f"Fit Wasserstein (mean): {fit_eval.wasserstein.mean():.3f}")
 

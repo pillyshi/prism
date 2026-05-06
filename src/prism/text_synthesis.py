@@ -26,7 +26,7 @@ def _format_score(score: float, n_levels: int | None) -> str:
 
 
 class TextSynthesizer:
-    """Samples from a fitted feature distribution and synthesizes new texts.
+    """Fits a feature distribution and synthesizes texts from a given feature matrix.
 
     Usage::
 
@@ -34,7 +34,7 @@ class TextSynthesizer:
         synthesizer.save("synthesizer.json")
 
         synthesizer = TextSynthesizer.load("synthesizer.json")
-        texts = synthesizer.sample(n=5, llm=llm_client)
+        texts = synthesizer.synthesize(X_new, llm=llm_client)
     """
 
     def fit(
@@ -112,117 +112,44 @@ class TextSynthesizer:
         obj._has_length = has_length
         return obj
 
-    def sample_vectors(
+    def synthesize(
         self,
-        n: int,
-        *,
-        rng: np.random.Generator | None = None,
-    ) -> np.ndarray:
-        """Sample n feature vectors from the fitted distribution without synthesizing texts.
-
-        Args:
-            n: Number of vectors to sample.
-            rng: Optional numpy Generator for reproducibility.
-
-        Returns:
-            Array of shape (n, n_features) with values clipped to [0, 1].
-        """
-        if rng is None:
-            rng = np.random.default_rng()
-
-        n_features = len(self._features)
-        n_aug = n_features + (1 if self._has_length else 0)
-
-        if n_aug == 0:
-            return np.empty((n, 0))
-
-        full_samples = rng.multivariate_normal(mean=self._mean, cov=self._cov, size=n)
-        return np.clip(full_samples[:, :n_features], 0.0, 1.0)
-
-    def sample_with_vectors(
-        self,
-        n: int,
+        X: np.ndarray,
         *,
         llm: BaseLLMClient,
+        lengths: np.ndarray | None = None,
         language: str | None = None,
         n_levels: int | None = None,
         threshold: float | None = None,
-        rng: np.random.Generator | None = None,
-    ) -> tuple[list[str], np.ndarray]:
-        """Sample n feature vectors, synthesize texts, and return both.
+    ) -> list[str]:
+        """Synthesize texts from a given feature matrix.
 
         Args:
-            n: Number of texts to generate.
+            X: Feature matrix of shape (n_texts, n_features).
             llm: LLM client used for text generation.
+            lengths: Target character counts of shape (n_texts,). If provided,
+                each generated text is prompted to match the corresponding length.
             language: If specified, instruct the LLM to respond in this language.
             n_levels: Discretize scores into k levels (None=continuous, 2=YES/NO,
                 3=LOW/MED/HIGH, k>=4=numeric labels). Default: None.
             threshold: Only include features with score >= threshold in the prompt.
                 Default: None (include all features).
-            rng: Optional numpy Generator for reproducibility.
 
         Returns:
-            Tuple of (texts, X_sampled) where X_sampled has shape (n, n_features).
+            List of len(X) generated texts.
         """
-        if rng is None:
-            rng = np.random.default_rng()
-
-        n_features = len(self._features)
-        n_aug = n_features + (1 if self._has_length else 0)
-
-        if n_aug == 0:
-            full_samples = np.empty((n, 0))
-        else:
-            full_samples = rng.multivariate_normal(mean=self._mean, cov=self._cov, size=n)
-
-        feature_samples = np.clip(full_samples[:, :n_features], 0.0, 1.0)
-
         results: list[str] = []
-        for i, sample in enumerate(feature_samples):
+        for i, sample in enumerate(X):
             conditions: list[tuple[str, str]] = []
             for feature, score in zip(self._features, sample):
                 if threshold is not None and score < threshold:
                     continue
                 conditions.append((feature.hypothesis, _format_score(float(score), n_levels)))
-
-            length: int | None = None
-            if self._has_length:
-                length = max(1, int(round(np.exp(full_samples[i, n_features]))))
-
+            length = int(lengths[i]) if lengths is not None else None
             user_msg = prompts.build_user_message(conditions, language=language, length=length)
             messages = [
                 {"role": "system", "content": prompts.SYSTEM},
                 {"role": "user", "content": user_msg},
             ]
             results.append(llm.complete(messages))
-        return results, feature_samples
-
-    def sample(
-        self,
-        n: int,
-        *,
-        llm: BaseLLMClient,
-        language: str | None = None,
-        n_levels: int | None = None,
-        threshold: float | None = None,
-        rng: np.random.Generator | None = None,
-    ) -> list[str]:
-        """Sample n feature vectors and synthesize texts.
-
-        Args:
-            n: Number of texts to generate.
-            llm: LLM client used for text generation.
-            language: If specified, instruct the LLM to respond in this language.
-            n_levels: Discretize scores into k levels (None=continuous, 2=YES/NO,
-                3=LOW/MED/HIGH, k>=4=numeric labels). Default: None.
-            threshold: Only include features with score >= threshold in the prompt.
-                Default: None (include all features).
-            rng: Optional numpy Generator for reproducibility.
-
-        Returns:
-            List of n generated texts.
-        """
-        texts, _ = self.sample_with_vectors(
-            n, llm=llm, language=language, n_levels=n_levels, threshold=threshold, rng=rng
-        )
-        return texts
+        return results

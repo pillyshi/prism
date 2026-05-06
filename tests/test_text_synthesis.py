@@ -106,27 +106,7 @@ def test_load_raises_on_shape_mismatch(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# sample — count and basic behavior
-# ---------------------------------------------------------------------------
-
-def test_sample_returns_n_texts():
-    s = _fit()
-    llm = _make_llm(["t1", "t2", "t3"])
-    results = s.sample(3, llm=llm, rng=np.random.default_rng(0))
-    assert results == ["t1", "t2", "t3"]
-    assert llm.complete.call_count == 3
-
-
-def test_sample_n_zero_returns_empty():
-    s = _fit()
-    llm = _make_llm([])
-    results = s.sample(0, llm=llm)
-    assert results == []
-    llm.complete.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# sample — n_levels discretization
+# synthesize
 # ---------------------------------------------------------------------------
 
 def _get_user_content(llm: MagicMock, call_index: int = 0) -> str:
@@ -134,208 +114,109 @@ def _get_user_content(llm: MagicMock, call_index: int = 0) -> str:
     return messages[1]["content"]
 
 
-def test_sample_n_levels_none_continuous():
+def test_synthesize_returns_n_texts():
+    s = _fit()
+    X = np.random.default_rng(0).uniform(0, 1, (3, 3))
+    llm = _make_llm(["t1", "t2", "t3"])
+    results = s.synthesize(X, llm=llm)
+    assert results == ["t1", "t2", "t3"]
+    assert llm.complete.call_count == 3
+
+
+def test_synthesize_empty_x_returns_empty():
+    s = _fit()
+    X = np.empty((0, 3))
+    llm = _make_llm([])
+    results = s.synthesize(X, llm=llm)
+    assert results == []
+    llm.complete.assert_not_called()
+
+
+def test_synthesize_n_levels_none_continuous():
     s = _fit(np.full((5, 2), 0.7))
+    X = np.full((1, 2), 0.7)
     llm = _make_llm(["t"])
-    s.sample(1, llm=llm, rng=np.random.default_rng(0))
+    s.synthesize(X, llm=llm)
     content = _get_user_content(llm)
     assert re.search(r"→ 0\.\d{2}", content)
 
 
-def test_sample_n_levels_2_yes_no():
+def test_synthesize_n_levels_2_yes_no():
     s = _fit(np.full((5, 2), 0.8))
+    X = np.full((1, 2), 0.8)
     llm = _make_llm(["t"])
-    s.sample(1, llm=llm, n_levels=2, rng=np.random.default_rng(0))
+    s.synthesize(X, llm=llm, n_levels=2)
     content = _get_user_content(llm)
     assert "YES" in content or "NO" in content
 
 
-def test_sample_n_levels_3_low_med_high():
+def test_synthesize_n_levels_3_low_med_high():
     s = _fit(np.full((5, 2), 0.5))
+    X = np.full((1, 2), 0.5)
     llm = _make_llm(["t"])
-    s.sample(1, llm=llm, n_levels=3, rng=np.random.default_rng(0))
+    s.synthesize(X, llm=llm, n_levels=3)
     content = _get_user_content(llm)
     assert any(label in content for label in ("LOW", "MED", "HIGH"))
 
 
-def test_sample_n_levels_4_numeric():
+def test_synthesize_n_levels_4_numeric():
     s = _fit(np.full((5, 1), 0.9))
+    X = np.full((1, 1), 0.9)
     llm = _make_llm(["t"])
-    s.sample(1, llm=llm, n_levels=4, rng=np.random.default_rng(0))
+    s.synthesize(X, llm=llm, n_levels=4)
     content = _get_user_content(llm)
     assert re.search(r"→ \d+", content)
 
 
-# ---------------------------------------------------------------------------
-# sample — threshold filtering
-# ---------------------------------------------------------------------------
-
-def test_sample_threshold_filters_low_features():
+def test_synthesize_threshold_filters_low_features():
     features = [
         Feature(hypothesis="Always low feature."),
         Feature(hypothesis="Always high feature."),
     ]
-    X = np.column_stack([np.full(10, 0.1), np.full(10, 0.9)])
+    X_fit = np.column_stack([np.full(10, 0.1), np.full(10, 0.9)])
     s = TextSynthesizer()
-    s.fit(X, features)
-    s._mean = np.array([0.1, 0.9])
-    s._cov = np.eye(2) * 1e-9
-
+    s.fit(X_fit, features)
+    X = np.array([[0.1, 0.9]])
     llm = _make_llm(["t"])
-    s.sample(1, llm=llm, threshold=0.5, rng=np.random.default_rng(0))
+    s.synthesize(X, llm=llm, threshold=0.5)
     content = _get_user_content(llm)
     assert "Always low feature." not in content
     assert "Always high feature." in content
 
 
-def test_sample_threshold_all_filtered_no_crash():
+def test_synthesize_threshold_all_filtered_no_crash():
     s = _fit(np.full((5, 2), 0.1))
-    s._mean = np.array([0.1, 0.1])
-    s._cov = np.eye(2) * 1e-9
+    X = np.full((1, 2), 0.1)
     llm = _make_llm(["t"])
-    results = s.sample(1, llm=llm, threshold=0.9, rng=np.random.default_rng(0))
+    results = s.synthesize(X, llm=llm, threshold=0.9)
     assert len(results) == 1
     content = _get_user_content(llm)
     assert "no specific conditions" in content
 
 
-# ---------------------------------------------------------------------------
-# sample — language
-# ---------------------------------------------------------------------------
-
-def test_sample_language_in_prompt():
+def test_synthesize_language_in_prompt():
     s = _fit()
+    X = np.random.default_rng(0).uniform(0, 1, (1, 3))
     llm = _make_llm(["テキスト"])
-    s.sample(1, llm=llm, language="Japanese", rng=np.random.default_rng(0))
+    s.synthesize(X, llm=llm, language="Japanese")
     content = _get_user_content(llm)
     assert "Japanese" in content
 
 
-# ---------------------------------------------------------------------------
-# fit / sample — lengths
-# ---------------------------------------------------------------------------
-
-def test_fit_with_lengths_stores_joint():
-    X = np.random.default_rng(0).uniform(0, 1, (10, 3))
-    lengths = np.array([100, 200, 150, 300, 250, 180, 120, 90, 400, 220])
-    s = TextSynthesizer()
-    s.fit(X, _make_features(3), lengths=lengths)
-    assert s._has_length is True
-    assert s._mean.shape == (4,)
-    assert s._cov.shape == (4, 4)
-    assert s._mean[-1] == pytest.approx(np.log(lengths.astype(float)).mean())
-
-
-def test_fit_without_lengths():
+def test_synthesize_lengths_in_prompt():
     s = _fit()
-    assert s._has_length is False
-    assert s._mean.shape == (3,)
-
-
-def test_fit_single_length_uses_identity_cov():
-    X = np.array([[0.5, 0.5]])
-    s = TextSynthesizer()
-    s.fit(X, _make_features(2), lengths=np.array([200]))
-    assert s._has_length is True
-    assert s._mean.shape == (3,)
-    np.testing.assert_array_equal(s._cov, np.eye(3))
-
-
-def test_sample_length_in_prompt_when_fitted():
-    X = np.full((5, 2), 0.5)
-    lengths = np.full(5, 200)
-    s = TextSynthesizer()
-    s.fit(X, _make_features(2), lengths=lengths)
+    X = np.random.default_rng(0).uniform(0, 1, (1, 3))
     llm = _make_llm(["t"])
-    s.sample(1, llm=llm, rng=np.random.default_rng(0))
+    s.synthesize(X, llm=llm, lengths=np.array([200]))
     content = _get_user_content(llm)
     assert "approximately" in content
     assert "characters" in content
 
 
-def test_sample_no_length_in_prompt_when_not_fitted():
+def test_synthesize_no_lengths_no_length_in_prompt():
     s = _fit()
+    X = np.random.default_rng(0).uniform(0, 1, (1, 3))
     llm = _make_llm(["t"])
-    s.sample(1, llm=llm, rng=np.random.default_rng(0))
+    s.synthesize(X, llm=llm)
     content = _get_user_content(llm)
     assert "characters" not in content
-
-
-def test_save_load_roundtrip_with_lengths(tmp_path):
-    X = np.random.default_rng(0).uniform(0, 1, (10, 3))
-    lengths = np.array([100, 200, 150, 300, 250, 180, 120, 90, 400, 220])
-    s = TextSynthesizer()
-    s.fit(X, _make_features(3), lengths=lengths)
-    path = tmp_path / "col.json"
-    s.save(path)
-
-    loaded = TextSynthesizer.load(path)
-    assert loaded._has_length == s._has_length
-    np.testing.assert_allclose(loaded._mean, s._mean)
-    np.testing.assert_allclose(loaded._cov, s._cov)
-
-
-def test_load_old_format_without_lengths(tmp_path):
-    """Files saved before length support must load without error."""
-    path = tmp_path / "old.json"
-    path.write_text(json.dumps({
-        "features": [{"hypothesis": "A."}],
-        "mean": [0.5],
-        "cov": [[1.0]],
-    }))
-    loaded = TextSynthesizer.load(path)
-    assert loaded._has_length is False
-
-
-# ---------------------------------------------------------------------------
-# sample_with_vectors
-# ---------------------------------------------------------------------------
-
-def test_sample_with_vectors_return_type():
-    s = _fit(n_features=3)
-    llm = _make_llm(["t1", "t2"])
-    texts, X_sampled = s.sample_with_vectors(2, llm=llm, rng=np.random.default_rng(0))
-    assert isinstance(texts, list)
-    assert isinstance(X_sampled, np.ndarray)
-
-
-def test_sample_with_vectors_matrix_shape():
-    s = _fit(n_features=3)
-    llm = _make_llm(["t"] * 5)
-    _, X_sampled = s.sample_with_vectors(5, llm=llm, rng=np.random.default_rng(0))
-    assert X_sampled.shape == (5, 3)
-
-
-def test_sample_with_vectors_matrix_clipped():
-    s = _fit()
-    llm = _make_llm(["t"] * 10)
-    _, X_sampled = s.sample_with_vectors(10, llm=llm, rng=np.random.default_rng(0))
-    assert np.all(X_sampled >= 0.0)
-    assert np.all(X_sampled <= 1.0)
-
-
-def test_sample_with_vectors_reproducible():
-    s = _fit()
-    responses = ["a", "b", "c"]
-    texts1, X1 = s.sample_with_vectors(3, llm=_make_llm(responses), rng=np.random.default_rng(99))
-    texts2, X2 = s.sample_with_vectors(3, llm=_make_llm(responses), rng=np.random.default_rng(99))
-    assert texts1 == texts2
-    np.testing.assert_array_equal(X1, X2)
-
-
-def test_sample_with_vectors_n_zero():
-    s = _fit(n_features=3)
-    llm = _make_llm([])
-    texts, X_sampled = s.sample_with_vectors(0, llm=llm)
-    assert texts == []
-    assert X_sampled.shape == (0, 3)
-
-
-def test_sample_with_vectors_zero_features():
-    X = np.empty((5, 0))
-    s = TextSynthesizer()
-    s.fit(X, [])
-    llm = _make_llm(["t"] * 3)
-    texts, X_sampled = s.sample_with_vectors(3, llm=llm, rng=np.random.default_rng(0))
-    assert len(texts) == 3
-    assert X_sampled.shape == (3, 0)

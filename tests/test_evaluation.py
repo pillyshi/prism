@@ -1,38 +1,13 @@
-"""Unit tests for evaluation and TextSynthesizer.sample_with_vectors."""
-from unittest.mock import MagicMock
-
+"""Unit tests for evaluate_fit and evaluate_generation."""
 import numpy as np
 import pytest
 
 from prism import (
-    Feature,
-    TextSynthesizer,
     FitEvaluation,
     GenerationEvaluation,
     evaluate_fit,
     evaluate_generation,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_features(n: int) -> list[Feature]:
-    return [Feature(hypothesis=f"Feature {i}.") for i in range(n)]
-
-
-def _fit_synthesizer(n_features: int = 3, seed: int = 0) -> TextSynthesizer:
-    X = np.random.default_rng(seed).uniform(0, 1, (10, n_features))
-    s = TextSynthesizer()
-    s.fit(X, _make_features(n_features))
-    return s
-
-
-def _make_llm(responses: list[str]) -> MagicMock:
-    llm = MagicMock()
-    llm.complete.side_effect = responses
-    return llm
 
 
 # ---------------------------------------------------------------------------
@@ -150,55 +125,3 @@ def test_evaluate_generation_zero_features():
     assert result.mae.shape == (0,)
 
 
-# ---------------------------------------------------------------------------
-# TextSynthesizer.sample_with_vectors
-# ---------------------------------------------------------------------------
-
-def test_sample_with_vectors_return_type():
-    s = _fit_synthesizer()
-    llm = _make_llm(["t1", "t2"])
-    texts, X_sampled = s.sample_with_vectors(2, llm=llm, rng=np.random.default_rng(0))
-    assert isinstance(texts, list)
-    assert isinstance(X_sampled, np.ndarray)
-
-
-def test_sample_with_vectors_matrix_shape():
-    s = _fit_synthesizer(n_features=3)
-    llm = _make_llm(["t"] * 5)
-    _, X_sampled = s.sample_with_vectors(5, llm=llm, rng=np.random.default_rng(0))
-    assert X_sampled.shape == (5, 3)
-
-
-def test_sample_with_vectors_matrix_clipped():
-    s = _fit_synthesizer()
-    llm = _make_llm(["t"] * 10)
-    _, X_sampled = s.sample_with_vectors(10, llm=llm, rng=np.random.default_rng(0))
-    assert np.all(X_sampled >= 0.0)
-    assert np.all(X_sampled <= 1.0)
-
-
-def test_sample_with_vectors_reproducible():
-    s = _fit_synthesizer()
-    responses = ["a", "b", "c"]
-    texts1, X1 = s.sample_with_vectors(3, llm=_make_llm(responses), rng=np.random.default_rng(99))
-    texts2, X2 = s.sample_with_vectors(3, llm=_make_llm(responses), rng=np.random.default_rng(99))
-    assert texts1 == texts2
-    np.testing.assert_array_equal(X1, X2)
-
-
-def test_sample_with_vectors_n_zero():
-    s = _fit_synthesizer(n_features=3)
-    llm = _make_llm([])
-    texts, X_sampled = s.sample_with_vectors(0, llm=llm)
-    assert texts == []
-    assert X_sampled.shape == (0, 3)
-
-
-def test_sample_with_vectors_zero_features():
-    X = np.empty((5, 0))
-    s = TextSynthesizer()
-    s.fit(X, [])
-    llm = _make_llm(["t"] * 3)
-    texts, X_sampled = s.sample_with_vectors(3, llm=llm, rng=np.random.default_rng(0))
-    assert len(texts) == 3
-    assert X_sampled.shape == (3, 0)

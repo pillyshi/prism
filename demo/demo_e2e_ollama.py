@@ -59,6 +59,6 @@ for coef, f in pairs:
 
 print("\n=== Stage 6: Text Synthesis ===")
 synthesizer = TextSynthesizer().fit(X2, features2)
-synth_texts = synthesizer.sample(2, llm=synth_llm, n_levels=2, rng=np.random.default_rng(42))
+synth_texts = synthesizer.synthesize(X2[:2], llm=synth_llm, n_levels=2)
 for i, t in enumerate(synth_texts, 1):
     print(f"  [{i}] {t}")

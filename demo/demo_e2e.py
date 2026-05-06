@@ -96,9 +96,8 @@ synthesizer.save("output/synthesizer.json")
 print("  Saved to output/synthesizer.json")
 
 loaded = TextSynthesizer.load("output/synthesizer.json")
-synth_texts, X_sampled = loaded.sample_with_vectors(
-    3, llm=llm, n_levels=3, rng=np.random.default_rng(42)
-)
+X_sampled = X2[:3]
+synth_texts = loaded.synthesize(X_sampled, llm=llm, n_levels=3)
 for i, t in enumerate(synth_texts, 1):
     print(f"  [{i}] {t}")
 
