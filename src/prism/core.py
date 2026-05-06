@@ -31,6 +31,7 @@ class Prism:
         self,
         llm: str | Any = "gpt-4o",
         nli_model: str = "cross-encoder/nli-deberta-v3-large",
+        entailment_idx: int = 0,
         api_key: str | None = None,
     ) -> None:
         if isinstance(llm, str):
@@ -39,7 +40,7 @@ class Prism:
             self._llm = llm
         else:
             self._llm = LangChainLLMClient(model=llm)
-        self._nli_model = NLIModel(model_name=nli_model)
+        self._nli_model = NLIModel(model_name=nli_model, entailment_idx=entailment_idx)
         self._namer = FeatureNamer(llm=self._llm)
 
     def generate_features(
