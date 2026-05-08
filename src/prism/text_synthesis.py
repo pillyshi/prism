@@ -94,6 +94,7 @@ class TextSynthesizer:
         X: np.ndarray,
         *,
         llm: BaseLLMClient,
+        lengths: np.ndarray | None = None,
         language: str | None = None,
         n_levels: int | None = None,
         threshold: float | None = None,
@@ -104,27 +105,33 @@ class TextSynthesizer:
         Args:
             X: Feature matrix of shape (n_texts, n_features).
             llm: LLM client used for text generation.
+            lengths: Target character counts of shape (n_texts,). Overrides internal
+                length sampling. Useful when X was produced by joint sampling (e.g.
+                SMOTE on features + log_length) and the caller wants to pass the
+                sampled lengths explicitly.
             language: If specified, instruct the LLM to respond in this language.
             n_levels: Discretize scores into k levels (None=continuous, 2=YES/NO,
                 3=LOW/MED/HIGH, k>=4=numeric labels). Default: None.
             threshold: Only include features with score >= threshold in the prompt.
                 Default: None (include all features).
-            seed: Random seed for length sampling. Default: None.
+            seed: Random seed for internal length sampling. Default: None.
 
         Returns:
             List of len(X) generated texts.
         """
         rng = np.random.default_rng(seed)
         results: list[str] = []
-        for sample in X:
+        for i, sample in enumerate(X):
             conditions: list[tuple[str, str]] = []
             for feature, score in zip(self._features, sample):
                 if threshold is not None and score < threshold:
                     continue
                 conditions.append((feature.hypothesis, _format_score(float(score), n_levels)))
-            if self._has_length:
+            if lengths is not None:
+                length: int | None = max(1, int(lengths[i]))
+            elif self._has_length:
                 log_len = rng.normal(self._log_length_mean, self._log_length_std)
-                length: int | None = max(1, int(np.exp(log_len)))
+                length = max(1, int(np.exp(log_len)))
             else:
                 length = None
             user_msg = prompts.build_user_message(conditions, language=language, length=length)

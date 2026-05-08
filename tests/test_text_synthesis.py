@@ -219,6 +219,16 @@ def test_fit_without_lengths_no_length_in_prompt():
     assert "characters" not in content
 
 
+def test_synthesize_explicit_lengths_override():
+    lengths_fit = np.full(10, 200)
+    s = TextSynthesizer().fit(_make_features(2), lengths=lengths_fit)
+    X = np.full((1, 2), 0.5)
+    llm = _make_llm(["t"])
+    s.synthesize(X, llm=llm, lengths=np.array([999]))
+    content = _get_user_content(llm)
+    assert "999" in content
+
+
 def test_synthesize_seed_produces_same_lengths():
     lengths = np.array([100, 200, 300, 400, 500])
     s = TextSynthesizer().fit(_make_features(2), lengths=lengths)
