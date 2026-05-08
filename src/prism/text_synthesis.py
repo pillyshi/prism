@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .llm import BaseLLMClient
+from .llm import BaseLLMClient, LLMClient
 from .models import Feature
 from .prompts import collection_synthesis as prompts
 
@@ -93,7 +93,7 @@ class TextSynthesizer:
         self,
         X: np.ndarray,
         *,
-        llm: BaseLLMClient,
+        llm: BaseLLMClient | str,
         lengths: np.ndarray | None = None,
         language: str | None = None,
         n_levels: int | None = None,
@@ -119,6 +119,8 @@ class TextSynthesizer:
         Returns:
             List of len(X) generated texts.
         """
+        if isinstance(llm, str):
+            llm = LLMClient(llm)
         rng = np.random.default_rng(seed)
         results: list[str] = []
         for i, sample in enumerate(X):
