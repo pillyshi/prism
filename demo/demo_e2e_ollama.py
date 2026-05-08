@@ -58,7 +58,8 @@ for coef, f in pairs:
     print(f"    {coef:+.3f}  {f.hypothesis}")
 
 print("\n=== Stage 6: Text Synthesis ===")
-synthesizer = TextSynthesizer().fit(X2, features2)
+lengths = np.array([len(t) for t in texts])
+synthesizer = TextSynthesizer().fit(features2, lengths=lengths)
 synth_texts = synthesizer.synthesize(X2[:2], llm=synth_llm, n_levels=2)
 for i, t in enumerate(synth_texts, 1):
     print(f"  [{i}] {t}")

@@ -91,7 +91,8 @@ print("\n=== Stage 6: Text Synthesis ===")
 # ---------------------------------------------------------------------------
 Path("output").mkdir(exist_ok=True)
 
-synthesizer = TextSynthesizer().fit(X2, features2)
+lengths = np.array([len(t) for t in texts])
+synthesizer = TextSynthesizer().fit(features2, lengths=lengths)
 synthesizer.save("output/synthesizer.json")
 print("  Saved to output/synthesizer.json")
 
